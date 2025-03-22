@@ -176,7 +176,7 @@ typedef struct Query
 	List	   *rteperminfos pg_node_attr(query_jumble_ignore);
 	FromExpr   *jointree;		/* table join tree (FROM and WHERE clauses);
 								 * also USING clause for MERGE */
-
+	
 	List	   *mergeActionList;	/* list of actions for MERGE (only) */
 
 	/*
@@ -2182,6 +2182,7 @@ typedef struct SelectStmt
 	bool		groupDistinct;	/* Is this GROUP BY DISTINCT? */
 	Node	   *havingClause;	/* HAVING conditional-expression */
 	List	   *windowClause;	/* WINDOW window_name AS (...), ... */
+	Node 	   *subjectClause;	/* SUBJECT TO clause */
 
 	/*
 	 * In a "leaf" node representing a VALUES list, the above fields are all

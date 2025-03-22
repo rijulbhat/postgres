@@ -523,7 +523,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <defelt>	def_elem reloption_elem old_aggr_elem operator_def_elem
 %type <node>	def_arg columnElem where_clause where_or_current_clause
 				a_expr b_expr c_expr AexprConst indirection_el opt_slice_bound
-				columnref in_expr having_clause func_table xmltable array_expr
+				columnref in_expr having_clause func_table xmltable array_expr subject_clause
 				OptWhereClause operator_def_arg
 %type <list>	opt_column_and_period_list
 %type <list>	rowsfrom_item rowsfrom_list opt_col_def_list
@@ -773,7 +773,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
 	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SOURCE SQL_P STABLE STANDALONE_P
 	START STATEMENT STATISTICS STDIN STDOUT STORAGE STORED STRICT_P STRING_P STRIP_P
-	SUBSCRIPTION SUBSTRING SUPPORT SYMMETRIC SYSID SYSTEM_P SYSTEM_USER
+	SUBJECT SUBSCRIPTION SUBSTRING SUPPORT SYMMETRIC SYSID SYSTEM_P SYSTEM_USER
 
 	TABLE TABLES TABLESAMPLE TABLESPACE TARGET TEMP TEMPLATE TEMPORARY TEXT_P THEN
 	TIES TIME TIMESTAMP TO TRAILING TRANSACTION TRANSFORM
@@ -12925,7 +12925,7 @@ select_clause:
 simple_select:
 			SELECT opt_all_clause opt_target_list
 			into_clause from_clause where_clause
-			group_clause having_clause window_clause
+			group_clause having_clause window_clause subject_clause
 				{
 					SelectStmt *n = makeNode(SelectStmt);
 
@@ -12937,12 +12937,13 @@ simple_select:
 					n->groupDistinct = ($7)->distinct;
 					n->havingClause = $8;
 					n->windowClause = $9;
+					n->subjectClause = $10;
 					n->stmt_location = @1;
 					$$ = (Node *) n;
 				}
 			| SELECT distinct_clause target_list
-			into_clause from_clause where_clause
-			group_clause having_clause window_clause
+			into_clause from_clause where_clause 
+			group_clause having_clause window_clause subject_clause
 				{
 					SelectStmt *n = makeNode(SelectStmt);
 
@@ -12991,6 +12992,11 @@ simple_select:
 				{
 					$$ = makeSetOp(SETOP_EXCEPT, $3 == SET_QUANTIFIER_ALL, $1, $4, @1);
 				}
+		;
+
+subject_clause:
+			SUBJECT a_expr							{ $$ = $2; }
+			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
 /*
@@ -18192,6 +18198,7 @@ reserved_keyword:
 			| SELECT
 			| SESSION_USER
 			| SOME
+			| SUBJECT
 			| SYMMETRIC
 			| SYSTEM_USER
 			| TABLE
