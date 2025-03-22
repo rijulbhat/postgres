@@ -1,1 +1,0 @@
-/Users/rushilbhat/Documents/CS348/postgres/src/test/locale/koi8-r/Makefile

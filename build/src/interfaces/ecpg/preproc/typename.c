@@ -1,1 +1,0 @@
-/Users/rushilbhat/Documents/CS348/postgres/build/../src/interfaces/ecpg/ecpglib/typename.c

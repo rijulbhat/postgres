@@ -1,1 +1,0 @@
-/Users/rushilbhat/Documents/CS348/postgres/build/../src/backend/access/rmgrdesc/rmgrdesc_utils.c

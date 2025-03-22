@@ -1,1 +1,0 @@
-/Users/rushilbhat/Documents/CS348/postgres/src/test/modules/spgist_name_ops/Makefile
