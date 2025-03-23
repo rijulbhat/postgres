@@ -239,6 +239,9 @@ typedef struct Query
 	/* a list of WithCheckOption's (added during rewrite) */
 	List	   *withCheckOptions pg_node_attr(query_jumble_ignore);
 
+	/*Adding subject clause*/
+	Node* subjectClause;
+
 	/*
 	 * The following two fields identify the portion of the source text string
 	 * containing this query.  They are typically only populated in top-level

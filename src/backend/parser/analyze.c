@@ -1556,6 +1556,8 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
 		parseCheckAggregates(pstate, qry);
 
+	qry->subjectClause = stmt->subjectClause;
+
 	return qry;
 }
 
