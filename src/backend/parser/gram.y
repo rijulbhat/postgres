@@ -500,7 +500,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <node>	fetch_args select_limit_value
 				offset_clause select_offset_value
-				select_fetch_first_value I_or_F_const
+				select_fetch_first_value I_or_F_const a_into threshold_value
 %type <ival>	row_or_rows first_or_next
 
 %type <list>	OptSeqOptList SeqOptList OptParenthesizedSeqOptList
@@ -523,7 +523,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <defelt>	def_elem reloption_elem old_aggr_elem operator_def_elem
 %type <node>	def_arg columnElem where_clause where_or_current_clause
 				a_expr b_expr c_expr AexprConst indirection_el opt_slice_bound
-				columnref in_expr having_clause func_table xmltable array_expr
+				columnref in_expr having_clause func_table xmltable array_expr subject_clause
 				OptWhereClause operator_def_arg
 %type <list>	opt_column_and_period_list
 %type <list>	rowsfrom_item rowsfrom_list opt_col_def_list
@@ -578,7 +578,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		Sconst comment_text notify_payload
 %type <str>		RoleId opt_boolean_or_string
 %type <list>	var_list
-%type <str>		ColId ColLabel BareColLabel
+%type <str>		ColId ColLabel BareColLabel column_name_const lhs_attr_name rhs_attr_name
 %type <str>		NonReservedWord NonReservedWord_or_Sconst
 %type <str>		var_name type_function_name param_name
 %type <str>		createdb_opt_name plassign_target
@@ -698,7 +698,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  */
 
 /* ordinary key words in alphabetical order */
-%token <keyword> ABORT_P ABSENT ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
+%token <keyword> ABORT_P ABS ABSENT ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
 	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC
 	ASENSITIVE ASSERTION ASSIGNMENT ASYMMETRIC ATOMIC AT ATTACH ATTRIBUTE AUTHORIZATION
 
@@ -773,7 +773,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
 	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SOURCE SQL_P STABLE STANDALONE_P
 	START STATEMENT STATISTICS STDIN STDOUT STORAGE STORED STRICT_P STRING_P STRIP_P
-	SUBSCRIPTION SUBSTRING SUPPORT SYMMETRIC SYSID SYSTEM_P SYSTEM_USER
+	SUBJECT SUBSCRIPTION SUBSTRING SUPPORT SYMMETRIC SYSID SYSTEM_P SYSTEM_USER
 
 	TABLE TABLES TABLESAMPLE TABLESPACE TARGET TEMP TEMPLATE TEMPORARY TEXT_P THEN
 	TIES TIME TIMESTAMP TO TRAILING TRANSACTION TRANSFORM
@@ -12925,7 +12925,7 @@ select_clause:
 simple_select:
 			SELECT opt_all_clause opt_target_list
 			into_clause from_clause where_clause
-			group_clause having_clause window_clause
+			group_clause having_clause window_clause subject_clause
 				{
 					SelectStmt *n = makeNode(SelectStmt);
 
@@ -12937,12 +12937,13 @@ simple_select:
 					n->groupDistinct = ($7)->distinct;
 					n->havingClause = $8;
 					n->windowClause = $9;
+					n->subjectClause = $10;
 					n->stmt_location = @1;
 					$$ = (Node *) n;
 				}
 			| SELECT distinct_clause target_list
-			into_clause from_clause where_clause
-			group_clause having_clause window_clause
+			into_clause from_clause where_clause 
+			group_clause having_clause window_clause subject_clause
 				{
 					SelectStmt *n = makeNode(SelectStmt);
 
@@ -12993,6 +12994,80 @@ simple_select:
 				}
 		;
 
+a_into:
+			I_or_F_const '*'
+			{
+				$$ = $1;
+			}
+			| /*EMPTY*/
+			{
+				$$ = NULL;
+			}
+		;
+
+lhs_attr_name:
+			IDENT
+			{
+				$$ = $1;
+			}
+		;
+
+rhs_attr_name:
+			IDENT
+			{
+				$$ = $1;
+			}
+		;
+
+threshold_value:
+			I_or_F_const
+			{
+				$$ = $1;
+			}
+		;
+
+column_name_const:
+			ColId
+			{
+				$$ = $1;
+			}
+		;
+
+subject_clause:
+			 SUBJECT column_name_const TO a_into lhs_attr_name MathOp a_into rhs_attr_name MathOp threshold_value
+			{ 
+				SubjectToStmt *n = makeNode(SubjectToStmt);
+				n -> abs = false;
+				n -> attr = $2;
+				n -> lhs_attr = $5;
+				n -> rhs_attr = $8;
+				n -> op = $6;
+				n -> lhs_const = $4;
+				n -> rhs_const = $7;
+				n -> op_rel = $9;
+				n -> threshold_val = $10;
+				$$ = (Node *) n;
+			}
+			| SUBJECT column_name_const TO ABS '(' a_into lhs_attr_name MathOp a_into rhs_attr_name ')' MathOp threshold_value 
+			{
+				SubjectToStmt *n = makeNode(SubjectToStmt);
+				n -> abs = true;
+				n -> attr = $2;
+				n -> lhs_attr = $7;
+				n -> rhs_attr = $10;
+				n -> op = $8;
+				n -> lhs_const = $6;
+				n -> rhs_const = $9;
+				n -> op_rel = $12;
+				n -> threshold_val = $13;
+				$$ = (Node *) n;
+			}
+			
+			| /*EMPTY*/
+			{
+				$$ = NULL;
+			}
+		;
 /*
  * SQL standard WITH clause looks like:
  *
@@ -18130,7 +18205,8 @@ type_func_name_keyword:
  * forced to.
  */
 reserved_keyword:
-			  ALL
+			  ABS
+			| ALL
 			| ANALYSE
 			| ANALYZE
 			| AND
@@ -18192,6 +18268,7 @@ reserved_keyword:
 			| SELECT
 			| SESSION_USER
 			| SOME
+			| SUBJECT
 			| SYMMETRIC
 			| SYSTEM_USER
 			| TABLE

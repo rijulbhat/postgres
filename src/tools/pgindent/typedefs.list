@@ -2800,6 +2800,7 @@ StripnullState
 SubLink
 SubLinkType
 SubOpts
+SubjectToStmt
 SubPlan
 SubPlanState
 SubRelInfo
