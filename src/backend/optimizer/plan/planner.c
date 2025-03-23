@@ -600,6 +600,8 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 
 	if (glob->partition_directory != NULL)
 		DestroyPartitionDirectory(glob->partition_directory);
+	
+	result->subjectClause = parse->subjectClause;
 
 	return result;
 }

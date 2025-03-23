@@ -127,6 +127,7 @@ typedef struct PlannedStmt
 
 	/* non-null if this is utility stmt */
 	Node	   *utilityStmt;
+	Node 	   *subjectClause;
 
 	/* statement location in source string (copied from Query) */
 	/* start location, or -1 if unknown */
