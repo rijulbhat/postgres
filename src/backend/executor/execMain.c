@@ -64,7 +64,7 @@
 #include "utils/plancache.h"
 #include "utils/rls.h"
 #include "utils/snapmgr.h"
-
+#include "utils/elog.h"
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
@@ -377,6 +377,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	DestReceiver *dest;
 	bool		sendTuples;
 	MemoryContext oldcontext;
+	SubjectToStmt* subjectToStmt;
 
 	/* sanity checks */
 	Assert(queryDesc != NULL);
@@ -394,6 +395,11 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 * Switch into per-query memory context
 	 */
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+
+	subjectToStmt = (SubjectToStmt*) queryDesc->plannedstmt->subjectClause;
+	if (subjectToStmt != NULL){
+		elog(INFO, "Atributo: %s", subjectToStmt->attr);
+	}
 
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
