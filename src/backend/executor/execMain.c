@@ -398,7 +398,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 	subjectToStmt = (SubjectToStmt*) queryDesc->plannedstmt->subjectClause;
 	if (subjectToStmt != NULL){
-		elog(INFO, "Atributo: %s", subjectToStmt->attr);
+		elog(INFO, "Atribute: %s", subjectToStmt->attr);
 	}
 
 	/* Allow instrumentation of Executor overall runtime */
