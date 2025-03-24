@@ -22,5 +22,6 @@ OBJS = \
 	knapsack.o \
 	pairingheap.o \
 	rbtree.o \
+	my_vector.o \
 
 include $(top_srcdir)/src/backend/common.mk

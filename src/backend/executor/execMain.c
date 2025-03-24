@@ -65,6 +65,9 @@
 #include "utils/rls.h"
 #include "utils/snapmgr.h"
 #include "utils/elog.h"
+#include "utils/builtins.h"
+#include "utils/elog.h"
+#include "lib/my_vector.h"
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
@@ -1743,6 +1746,7 @@ ExecutePlan(QueryDesc *queryDesc,
 	bool		use_parallel_mode;
 	TupleTableSlot *slot;
 	uint64		current_tuple_count;
+	bool 		is_complete;
 
 	/*
 	 * initialize local variables
@@ -1806,6 +1810,9 @@ ExecutePlan(QueryDesc *queryDesc,
 		 * If we are supposed to send the tuple somewhere, do so. (In
 		 * practice, this is probably always the case at this point.)
 		 */
+		dest->output_vector = (CharPtrVector *) malloc(sizeof(CharPtrVector));
+		dest->output_vector->natts = slot->tts_tupleDescriptor->natts;
+		char_ptr_vector_init(dest->output_vector);
 		if (sendTuples)
 		{
 			/*
@@ -1813,9 +1820,19 @@ ExecutePlan(QueryDesc *queryDesc,
 			 * has closed and no more tuples can be sent. If that's the case,
 			 * end the loop.
 			 */
-			if (!dest->receiveSlot(slot, dest))
+			is_complete = dest->receiveSlot(slot, dest);
+			if (!is_complete)
 				break;
+
 		}
+		
+		for(int i = 0; i < dest->output_vector->size; i++){
+			for(int j = 0; j < dest->output_vector->natts; j++){
+				elog(INFO, "%s ", dest->output_vector->data[i][j]);
+			}
+		}
+
+		// char_ptr_vector_free(dest->output_vector);
 
 		/*
 		 * Count tuples processed, if this is a SELECT.  (For other operation
