@@ -22,7 +22,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
-#include "lib/my_vector.h"
+#include "lib/rbtree.h"
 
 
 static void printtup_startup(DestReceiver *self, int operation,
@@ -377,7 +377,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 		}
 	}
 
-	char_ptr_vector_push(self->output_vector, my_output);
+	// char_ptr_vector_push(self->output_vector, my_output);
 
 	pq_endmessage_reuse(buf);
 

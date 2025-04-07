@@ -69,7 +69,7 @@
 
 #include "executor/tuptable.h"
 #include "tcop/cmdtag.h"
-#include "lib/my_vector.h"
+#include "lib/rbtree.h"
 
 
 
@@ -125,10 +125,10 @@ struct _DestReceiver
 	void		(*rShutdown) (DestReceiver *self);
 	/* Destroy the receiver object itself (if dynamically allocated) */
 	void		(*rDestroy) (DestReceiver *self);
-	CharPtrVector *output_vector;
 	/* CommandDest code for this receiver */
 	CommandDest mydest;
 	/* Private fields might appear beyond this point... */
+	// CharPtrVector *output_vector;
 };
 
 extern PGDLLIMPORT DestReceiver *None_Receiver; /* permanent receiver for

@@ -67,7 +67,7 @@
 #include "utils/elog.h"
 #include "utils/builtins.h"
 #include "utils/elog.h"
-#include "lib/my_vector.h"
+#include "lib/rbtree.h"
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
@@ -1810,9 +1810,13 @@ ExecutePlan(QueryDesc *queryDesc,
 		 * If we are supposed to send the tuple somewhere, do so. (In
 		 * practice, this is probably always the case at this point.)
 		 */
-		dest->output_vector = (CharPtrVector *) malloc(sizeof(CharPtrVector));
-		dest->output_vector->natts = slot->tts_tupleDescriptor->natts;
-		char_ptr_vector_init(dest->output_vector);
+		// dest->output_vector = NULL;
+		// dest->output_vector = char_ptr_vector_init(dest->output_vector);
+		// dest->output_vector->natts = slot->tts_tupleDescriptor->natts;
+		// char*** output = (char***) palloc(sizeof(char**) * 10);
+		// int x = 10;
+		// dest->x = 10;
+		// CharPtrVector *output_vector = char_ptr_vector_init();
 		if (sendTuples)
 		{
 			/*
@@ -1826,11 +1830,11 @@ ExecutePlan(QueryDesc *queryDesc,
 
 		}
 		
-		for(int i = 0; i < dest->output_vector->size; i++){
-			for(int j = 0; j < dest->output_vector->natts; j++){
-				elog(INFO, "%s ", dest->output_vector->data[i][j]);
-			}
-		}
+		// for(int i = 0; i < dest->output_vector->size; i++){
+		// 	for(int j = 0; j < dest->output_vector->natts; j++){
+		// 		elog(INFO, "%s ", dest->output_vector->data[i][j]);
+		// 	}
+		// }
 
 		// char_ptr_vector_free(dest->output_vector);
 

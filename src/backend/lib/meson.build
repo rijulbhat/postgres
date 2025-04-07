@@ -10,5 +10,4 @@ backend_sources += files(
   'knapsack.c',
   'pairingheap.c',
   'rbtree.c',
-  'my_vector.c',
 )

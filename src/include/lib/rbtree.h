@@ -13,6 +13,20 @@
 #ifndef RBTREE_H
 #define RBTREE_H
 
+typedef struct {
+    char ***data;    // Array of `char**` elements
+    size_t size;     // Number of elements
+    size_t capacity; // Allocated capacity
+    int natts;
+} CharPtrVector;
+
+// Function prototypes
+extern CharPtrVector* char_ptr_vector_init();
+extern void char_ptr_vector_push(CharPtrVector *vec, char **array);
+extern char **char_ptr_vector_get(CharPtrVector *vec, size_t index);
+extern void char_ptr_vector_free(CharPtrVector *vec);
+
+
 /*
  * RBTNode is intended to be used as the first field of a larger struct,
  * whose additional fields carry whatever payload data the caller needs

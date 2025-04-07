@@ -28,7 +28,39 @@
 
 #include "lib/rbtree.h"
 
+#define INITIAL_CAPACITY 4
 
+// Initialize the vector
+CharPtrVector* char_ptr_vector_init() {
+	// CharPtrVector *vec = (CharPtrVector *) palloc(sizeof(CharPtrVector));
+    // vec->data = (char***) malloc(INITIAL_CAPACITY * sizeof(char **));
+    // vec->size = 0;
+    // vec->capacity = INITIAL_CAPACITY;
+	// vec->natts = 0; // Initialize natts to 0
+	return NULL;
+}
+
+// Push an already allocated `char**` into the vector
+void char_ptr_vector_push(CharPtrVector *vec, char **array) {
+    // Resize if needed
+    if (vec->size == vec->capacity) {
+        vec->capacity *= 2;
+        vec->data = realloc(vec->data, vec->capacity * sizeof(char **));
+    }
+    // Store the pointer
+    vec->data[vec->size++] = array;
+}
+
+// Get a `char**` from the vector
+char **char_ptr_vector_get(CharPtrVector *vec, size_t index) {
+    if (index >= vec->size) return NULL;
+    return vec->data[index];
+}
+
+// Free the vector (does not free stored `char**` elements)
+void char_ptr_vector_free(CharPtrVector *vec) {
+    free(vec->data);  // Free only the vector storage
+}
 /*
  * Colors of nodes (values of RBTNode.color)
  */
