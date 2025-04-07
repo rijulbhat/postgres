@@ -31,5 +31,6 @@ extern bool debugtup(TupleTableSlot *slot, DestReceiver *self);
 extern void spi_dest_startup(DestReceiver *self, int operation,
 							 TupleDesc typeinfo);
 extern bool spi_printtup(TupleTableSlot *slot, DestReceiver *self);
+extern CharPtrVector* output_vector;
 
 #endif							/* PRINTTUP_H */

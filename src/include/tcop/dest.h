@@ -128,7 +128,7 @@ struct _DestReceiver
 	/* CommandDest code for this receiver */
 	CommandDest mydest;
 	/* Private fields might appear beyond this point... */
-	CharPtrVector *output_vector;
+	// CharPtrVector *output_vector;
 };
 
 extern PGDLLIMPORT DestReceiver *None_Receiver; /* permanent receiver for

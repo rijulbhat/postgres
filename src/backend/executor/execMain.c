@@ -68,6 +68,7 @@
 #include "utils/builtins.h"
 #include "utils/elog.h"
 #include "lib/my_vector.h"
+#include "access/printtup.h"
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
@@ -1747,7 +1748,6 @@ ExecutePlan(QueryDesc *queryDesc,
 	TupleTableSlot *slot;
 	uint64		current_tuple_count;
 	bool 		is_complete;
-
 	/*
 	 * initialize local variables
 	 */
@@ -1810,9 +1810,9 @@ ExecutePlan(QueryDesc *queryDesc,
 		 * If we are supposed to send the tuple somewhere, do so. (In
 		 * practice, this is probably always the case at this point.)
 		 */
-		dest->output_vector = (CharPtrVector *) malloc(sizeof(CharPtrVector));
-		dest->output_vector->natts = slot->tts_tupleDescriptor->natts;
-		char_ptr_vector_init(dest->output_vector);
+		output_vector = (CharPtrVector *) malloc(sizeof(CharPtrVector));
+		output_vector->natts = slot->tts_tupleDescriptor->natts;
+		char_ptr_vector_init(output_vector);
 		if (sendTuples)
 		{
 			/*
@@ -1826,9 +1826,9 @@ ExecutePlan(QueryDesc *queryDesc,
 
 		}
 		
-		for(int i = 0; i < dest->output_vector->size; i++){
-			for(int j = 0; j < dest->output_vector->natts; j++){
-				elog(INFO, "%s ", dest->output_vector->data[i][j]);
+		for(int i = 0; i < output_vector->size; i++){
+			for(int j = 0; j < output_vector->natts; j++){
+				elog(INFO, "%s ", output_vector->data[i][j]);
 			}
 		}
 
