@@ -72,17 +72,7 @@
 #include "lib/rbtree.h"
 #include "lib/ilist.h"
 #include "catalog/namespace.h"  // for get_rel_name()
-#include "access/heapam.h"
-#include "access/htup_details.h"
-#include "utils/rel.h"
-#include "utils/lsyscache.h"
-#include "utils/snapmgr.h"
-#include "utils/typcache.h"
-#include "utils/builtins.h"
-#include "utils/memutils.h"
-#include "catalog/pg_type.h"
-#include "executor/executor.h"
-#include "parser/parsetree.h"
+
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
 ExecutorRun_hook_type ExecutorRun_hook = NULL;
@@ -121,30 +111,35 @@ Range createRange(int st, int e) {
 	return range;
 }
 bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb, double *epsilon, char *column_name);
-bool fairness_check(char **column_headers, CharPtrVector* vec, char *sourceText, int natts, SubjectToStmt* subjectToStmt);
+bool fairness_check(char **column_headers, char *sourceText, int natts, SubjectToStmt* subjectToStmt);
 int my_strcmp(const char *str1, const char *str2);
 int get_attribute_index(char **column_headers, int natts, char *attribute);
 void merge( int left, int mid, int right, int attr_index);
 void merge_sort(int left, int right, int attr_index);
-void buildingpointers(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt);
+void buildingpointers(char **column_headers, char *sourceText, int natts, SubjectToStmt* subjectToStmt);
 int jp(char **column_headers, char *sourceText, int natts, char *attribute,int curr,int color,char * dir,int *LJP,int* RJP,int * colorarray);
 void initializestack(mystack* stack, char* name);
 double jaccordsimilarity(Range r1, Range r2);
 void pushstack(mystack* stack, int value);
 void pop(mystack* stack);
 char *print_table_names_from_query(QueryDesc *queryDesc);
-Range getrange(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
-int get_lower_value_index(int index, float value);
-int get_upper_value_index(int index, float value);
+Range getrange(char **column_headers, char *sourceText, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 static int num_tuples = 0;
 int MAX_ATTRS;
-void store_table_data(Oid relid, CharPtrVector *vec);
 void pop(mystack* stack);
 int top(mystack* stack);
 int size(mystack* stack);
 int *RJP, *LJP;
 char ***outputArray;
-static bool is_scan_node(Node *node);
+
+void count_tuples() {
+	elog(INFO, "Counting tuples 1...");
+	while (outputArray[num_tuples][0] != NULL) {
+		elog(INFO, "Counting tuples 2...");
+		num_tuples++;
+	}
+	elog(INFO, "Counting tuples 3...");
+}
 
 
 /* end of local decls */
@@ -501,6 +496,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		}
 		
 	}
+	// elog(INFO, "HI3");
 	/*
 	 * Run plan, unless direction is NoMovement.
 	 *
@@ -528,111 +524,33 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	estate->es_total_processed += estate->es_processed;
 	
 	if (queryDesc->operation == CMD_SELECT && subjectToStmt != NULL){
-		
-		Plan *plan = queryDesc->planstate->plan;
-		Oid relid = InvalidOid;
+		// elog(INFO, "SubjectToStmt Members:");
+		// elog(INFO, "Attribute: %s", subjectToStmt->attr);
+		// elog(INFO, "LHS Attribute: %s", subjectToStmt->lhs_attr);
+		// elog(INFO, "RHS Attribute: %s", subjectToStmt->rhs_attr);
 
-		PlanState *ps = queryDesc->planstate;
-
-		// if (is_scan_node((Node *) ps))  // use the is_scan_node helper from before
-		// {
-		ScanState *scanstate = (ScanState *) ps;
-		Scan *scan = (Scan *) scanstate->ps.plan;
-	
-		Index scanrelid = scan->scanrelid;
-		CharPtrVector* vec;
-		vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
-		if (scanrelid > 0)
-		{
-			RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
-			Oid relid = rte->relid;
-	
-			
-			char_ptr_vector_init(vec);
-			store_table_data(relid, vec);
-	
-			// elog(INFO, "Cached data from relid: %u", relid);
-		}
-		else
-		{
-			elog(WARNING, "Invalid scanrelid (0)");
-		}
-		// }
-		// else
-		// {
-		// 	elog(INFO, "Top-level planstate is not a scan node (type: %d)", nodeTag(ps));
-		// }
-
-		List *qualList = (List *) scan->plan.qual;
-		ListCell *lc;
-		int index, n_bounds, l_index, r_index;
-		char* attribute;
-		float bounds[2];
-		
-		n_bounds = 0;
-
-		foreach(lc, qualList)
-		{
-			Node *node = (Node *) lfirst(lc);
-		
-			if (IsA(node, OpExpr))
-			{
-				OpExpr *opexpr = (OpExpr *) node;
-		
-				List *args = opexpr->args;
-				if (list_length(args) == 2)
-				{
-					Expr *left = (Expr *) linitial(args);
-					Expr *right = (Expr *) lsecond(args);
-		
-					if (IsA(left, Var) && IsA(right, Const))
-					{
-						Var *var = (Var *) left;
-						Const *constant = (Const *) right;
-						
-						// elog(INFO, "Attribute number: %d", var->varattno);
-						index = var->varattno - 1;
-						attribute = column_header->data[index];
-						// elog(INFO, "Constant value: %f", DatumGetFloat8(constant->constvalue));
-						bounds[n_bounds++] = DatumGetFloat8(constant->constvalue);
-						// Optional: get the operator itself
-						// elog(INFO, "Operator OID: %u", opexpr->opno);
-					}
-				}
+		outputArray = (char ***)malloc(output_vector->size * sizeof(char **));
+		// elog(INFO, "Output vector size: %d", output_vector->size);
+		for (int i = 0; i < output_vector->size; i++) {
+			outputArray[i] = (char **)malloc(output_vector->natts * sizeof(char *));
+			for (int j = 0; j < output_vector->natts; j++) {
+				outputArray[i][j] = strdup(output_vector->data[i][j]);
+				// elog(INFO, "Output Array[%d][%d]: %s", i, j, outputArray[i][j]);
 			}
 		}
-
-		outputArray = (char ***)malloc(vec->size * sizeof(char **));
-		// elog(INFO, "Output vector size: %d", vec->size);
-		for (int i = 0; i < vec->size; i++) {
-			outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
-			for (int j = 0; j < vec->natts; j++) {
-				outputArray[i][j] = strdup(vec->data[i][j]);
-			}
-		}
-		fair = fairness_check(column_header->data, vec, queryDesc->sourceText, vec->natts, subjectToStmt); /* new line added */
+		fair = fairness_check(column_header->data, queryDesc->sourceText, output_vector->natts, subjectToStmt); /* new line added */
 		if(!fair){
 			MAX_ATTRS = column_header->natts;
 			epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-			num_tuples = vec -> size;
-			buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
-
-			l_index = get_upper_value_index(index, bounds[0]) + 1;
-			r_index = get_lower_value_index(index, bounds[1]) + 1;
-			elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
-			Range output = getrange(column_header->data, attribute, vec->natts, subjectToStmt, l_index, r_index, epsilon);
-			// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
+			buildingpointers(column_header->data, queryDesc->sourceText, output_vector->natts, subjectToStmt);
+			Range output = getrange(column_header->data,queryDesc->sourceText,output_vector->natts,subjectToStmt,1,num_tuples,epsilon);
+			elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 			elog(INFO, "Corrected Query:");
-			elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s, start = %d, end = %d", print_table_names_from_query(queryDesc), attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index], output.start, output.end);
+			elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %d AND %d", print_table_names_from_query(queryDesc), subjectToStmt->attr, output.start, output.end);
 		}
-		// for (int i = 0; i < vec->size; i++) {
-		// 	for (int j = 0; j < vec->natts; j++) {
-		// 		if (j!=index) continue;
-		// 		elog(INFO, "outputArray[%d][%d] = %s", i, j, outputArray[i][j]);
-		// 	}
-		// }
+
 		for (int i = 0; i < num_tuples; i++) {
-			for (int j = 0; j < vec->natts; j++) {
+			for (int j = 0; j < output_vector->natts; j++) {
 				free(outputArray[i][j]);
 			}
 			free(outputArray[i]);
@@ -642,9 +560,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		num_tuples = 0;
 		char_ptr_vector_free(output_vector);
 		free(output_vector);
-
-		char_ptr_vector_free(vec);
-		free(vec);
 
 		header_free(column_header);
 		free(column_header);
@@ -657,8 +572,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 	if (queryDesc->totaltime)
 		InstrStopNode(queryDesc->totaltime, estate->es_processed);
-	
+	// elog(INFO, "HI5");
 	MemoryContextSwitchTo(oldcontext);
+	// elog(INFO, "HI6");
 }
 
 /* ----------------------------------------------------------------
@@ -3404,7 +3320,7 @@ EvalPlanQualEnd(EPQState *epqstate)
 }
 
 
-bool fairness_check(char **column_headers, CharPtrVector* vec, char *sourceText, int natts, SubjectToStmt* subjectToStmt)
+bool fairness_check(char **column_headers, char *sourceText, int natts, SubjectToStmt* subjectToStmt)
 {
 	double Cr_value, Cb_value;
 	int Wr, Wb, epsilon;
@@ -3426,7 +3342,7 @@ bool fairness_check(char **column_headers, CharPtrVector* vec, char *sourceText,
 	int unique_count = 0;
 	idx = get_attribute_index(column_headers, natts, column_name);
 
-	for (int i = 0; i < vec->size; i++)
+	for (int i = 0; i < output_vector->size; i++)
 	{
 		char *column_value = outputArray[i][idx];
 		bool found = false;
@@ -3614,45 +3530,6 @@ int get_attribute_index(char **column_headers, int natts, char *attribute) {
 	elog(ERROR, "Attribute not found");
     return -1; // Attribute not found
 }
-
-int get_lower_value_index(int index, float value) {
-	int nearest_index = -1;
-	float max_value = -1;
-
-	for (int i = 0; i < num_tuples; i++) {
-		float current_value = atof(outputArray[i][index]);
-		if (current_value <= value && (nearest_index == -1 || current_value > max_value)) {
-			max_value = current_value;
-			nearest_index = i;
-		}
-	}
-
-	if (nearest_index != -1) {
-		return nearest_index;
-	}
-
-	elog(ERROR, "No value <= %f found in the relation", value);
-	return -1; // No value <= value found
-}
-
-int get_upper_value_index(int index, float value) {
-	int nearest_index = -1;
-
-	for (int i = 0; i < num_tuples; i++) {
-		float current_value = atof(outputArray[i][index]);
-		if (current_value >= value && (nearest_index == -1 || current_value < atof(outputArray[nearest_index][index]))) {
-			nearest_index = i;
-		}
-	}
-
-	if (nearest_index != -1) {
-		return nearest_index;
-	}
-
-	elog(ERROR, "No value >= %f found in the relation", value);
-	return -1; // No value >= value found
-}
-
 void merge(int left, int mid, int right, int attr_index) {
     int n1 = mid - left + 1;
     int n2 = right - mid;
@@ -3675,7 +3552,7 @@ void merge(int left, int mid, int right, int attr_index) {
 
     int i = 0, j = 0, k = left;
     while (i < n1 && j < n2) {
-        if (atof(L[i][attr_index]) <= atof(R[j][attr_index])) {
+        if (atoi(L[i][attr_index]) <= atoi(R[j][attr_index])) {
             for (int l = 0; l < MAX_ATTRS; l++)
 			outputArray[k][l] = L[i][l];
             i++;
@@ -3748,6 +3625,7 @@ static void int_rbtree_combiner(RBTNode *existing, const RBTNode *newdata, void 
 }
 static RBTNode *int_rbtree_allocfunc(void *arg)
 {
+	num_tuples = output_vector->size;
     IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
     newNode->key = 0;
 	// elog(INFO,"%d",num_tuples * sizeof(int));
@@ -3764,13 +3642,15 @@ static void int_rbtree_freefunc(RBTNode *node, void *arg)
 {
     pfree(node);
 }
-void buildingpointers(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt)
+void buildingpointers(char **column_headers, char *sourceText, int natts, SubjectToStmt* subjectToStmt)
 {
 	bool newinsert;
+	char *attribute = subjectToStmt->attr;
 	int cumulative;
     int attr_index = get_attribute_index(column_headers, natts, attribute);
 	
 	// elog(INFO, "Attribute index: %d", attr_index);
+	num_tuples = output_vector->size;
 	// count_tuples();
 	// elog(INFO, "UFFF");
 	
@@ -3992,13 +3872,14 @@ int size(mystack* stack)
 	}
 	return count;
 }
-Range getrange(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
+Range getrange(char **column_headers, char *sourceText, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
 {
 	if(start <=0 || end > num_tuples)
 	{
 		elog(ERROR, "Invalid range");
 		return createRange(-1,-1);
 	}
+	char *attribute = subjectToStmt->attr;
     int attr_index = get_attribute_index(column_headers, natts, attribute);
 
 	// elog(INFO, "Printing LJP and RJP arrays:");
@@ -4217,75 +4098,4 @@ char *print_table_names_from_query(QueryDesc *queryDesc)
 			}
         }
     }
-}
-
-
-static bool
-is_scan_node(Node *node)
-{
-    NodeTag tag = nodeTag(node);
-    return tag == T_SeqScanState ||
-           tag == T_IndexScanState ||
-           tag == T_BitmapHeapScanState ||
-           tag == T_SampleScanState ||
-           tag == T_TidScanState ||
-           tag == T_SubqueryScanState ||
-           tag == T_FunctionScanState ||
-           tag == T_ValuesScanState ||
-           tag == T_TableFuncScanState ||
-           tag == T_CteScanState ||
-           tag == T_NamedTuplestoreScanState ||
-           tag == T_WorkTableScanState ||
-           tag == T_ForeignScanState ||
-           tag == T_CustomScanState;
-}
-
-void store_table_data(Oid relid, CharPtrVector *vec)
-{
-    Relation rel;
-    TableScanDesc scan;
-    HeapTuple tuple;
-    TupleDesc tupdesc;
-
-    rel = table_open(relid, AccessShareLock);
-    tupdesc = RelationGetDescr(rel);
-    vec->natts = tupdesc->natts;
-
-    scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
-
-    while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
-    {
-        char **row = (char **) palloc(sizeof(char *) * tupdesc->natts);
-        bool isnull;
-
-        for (int i = 0; i < tupdesc->natts; i++)
-        {
-            if (TupleDescAttr(tupdesc, i)->attisdropped)
-            {
-                row[i] = NULL;
-                continue;
-            }
-
-            Datum val = heap_getattr(tuple, i + 1, tupdesc, &isnull);
-            if (isnull)
-            {
-                row[i] = NULL;
-            }
-            else
-            {
-                Oid typoutput;
-                bool typIsVarlena;
-                char *str;
-
-                getTypeOutputInfo(TupleDescAttr(tupdesc, i)->atttypid, &typoutput, &typIsVarlena);
-                str = OidOutputFunctionCall(typoutput, val);
-                row[i] = pstrdup(str); // Make sure it lives in PostgreSQL memory context
-            }
-        }
-
-        char_ptr_vector_push(vec, row);
-    }
-
-    table_endscan(scan);
-    table_close(rel, AccessShareLock);
 }

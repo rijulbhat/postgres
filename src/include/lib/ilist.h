@@ -254,6 +254,18 @@ typedef struct slist_head
  * NB: this wouldn't really need to be an extra struct, we could use an
  * slist_node * directly. We prefer a separate type for consistency.
  */
+typedef struct mystack
+{
+	char* stackname;
+	dlist_head header;
+}mystack;
+
+typedef struct mynode
+{
+	int value;
+	dlist_node node;
+}mynode;
+
 typedef struct slist_iter
 {
 	slist_node *cur;
