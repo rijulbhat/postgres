@@ -143,7 +143,7 @@ void pop(mystack* stack);
 int top(mystack* stack);
 int size(mystack* stack);
 int *RJP, *LJP;
-char ***outputArray;
+char ***outputArray,***queryArray;
 static bool is_scan_node(Node *node);
 
 
@@ -607,11 +607,18 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		}
 
 		outputArray = (char ***)malloc(vec->size * sizeof(char **));
+		queryArray = (char ***)malloc(output_vector->size * sizeof(char **));
 		// elog(INFO, "Output vector size: %d", vec->size);
 		for (int i = 0; i < vec->size; i++) {
 			outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
 			for (int j = 0; j < vec->natts; j++) {
 				outputArray[i][j] = strdup(vec->data[i][j]);
+			}
+		}
+		for (int i = 0; i < output_vector->size; i++) {
+			queryArray[i] = (char **)malloc(output_vector->natts * sizeof(char *));
+			for (int j = 0; j < output_vector->natts; j++) {
+				queryArray[i][j] = strdup(output_vector->data[i][j]);
 			}
 		}
 		fair = fairness_check(column_header->data, vec, queryDesc->sourceText, vec->natts, subjectToStmt); /* new line added */
@@ -650,11 +657,16 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			}
 			free(outputArray[i]);
 		}
-		
+		for (int i = 0; i < output_vector->size; i++) {
+			for (int j = 0; j < output_vector->natts; j++) {
+				free(queryArray[i][j]);
+			}
+			free(queryArray[i]);
+		}
 		free(outputArray);
-		
+		free(queryArray);
 		outputArray = NULL;
-		
+		queryArray = NULL;
 		num_tuples = 0;
 		char_ptr_vector_free(output_vector);
 		free(output_vector);
@@ -3444,7 +3456,7 @@ bool fairness_check(char **column_headers, CharPtrVector* vec, char *sourceText,
 
 	for (int i = 0; i < output_vector->size; i++)
 	{
-		char *column_value = output_vector->data[i][idx];
+		char *column_value = queryArray[i][idx];
 		bool found = false;
 
 		for (int j = 0; j < unique_count; j++)
@@ -3877,10 +3889,10 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
                           NULL); 
 	c[num_tuples+1]=0;
 	cumulative=0;
-	// elog(INFO, "Printing right jump pointers:\n");
-    // for (int i = 0; i < num_tuples+1; i++) {
-    //     elog(INFO, "RJP[%d] = %d\n", i, RJP[i]);
-    // }
+	elog(INFO, "Printing right jump pointers:\n");
+    for (int i = 0; i < num_tuples+1; i++) {
+        elog(INFO, "RJP[%d] = %d\n", i, RJP[i]);
+    }
 	for (int i = num_tuples+1; i >=1; i--) {
 		if(i>=1 && i<=num_tuples)
 		{
@@ -3923,11 +3935,11 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 		}
 
     }
-	// elog(INFO, "Printing left jump pointers:\n");
-	// for (int i = 0; i < num_tuples+2; i++) {
-	// 	elog(INFO, "LJP[%d] = %d\n", i, LJP[i]);
-	// }
-	// elog(INFO,"checkin jp function");
+	elog(INFO, "Printing left jump pointers:\n");
+	for (int i = 0; i < num_tuples+2; i++) {
+		elog(INFO, "LJP[%d] = %d\n", i, LJP[i]);
+	}
+	elog(INFO,"checkin jp function");
 	// elog(INFO,"%d",jp(column_headers,sourceText,natts,attribute,13,-1,"left",LJP,RJP,color));
     return;
 }
