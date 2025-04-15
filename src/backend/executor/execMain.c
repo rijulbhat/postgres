@@ -148,6 +148,7 @@ int size(mystack* stack);
 int *RJP, *LJP;
 char ***outputArray;
 static bool is_scan_node(Node *node);
+bool built_pointers = false;
 
 
 /* end of local decls */
@@ -496,10 +497,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				strcpy(attribute, NameStr(att->attname));
 				header_push(column_header, attribute);
 			}	
-			// }
-			output_vector = (CharPtrVector *) malloc(sizeof(CharPtrVector));
-			output_vector->natts = column_header->natts;
-			char_ptr_vector_init(output_vector);
 		}
 		
 	}
@@ -530,6 +527,10 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 */
 	estate->es_total_processed += estate->es_processed;
 	
+	if (queryDesc->operation == CMD_INSERT || queryDesc->operation == CMD_UPDATE || queryDesc->operation == CMD_MERGE || queryDesc->operation == CMD_DELETE){
+		built_pointers = false;
+	}
+
 	if (queryDesc->operation == CMD_SELECT && subjectToStmt != NULL){
 		
 		if (!subjectToStmt->abs){
@@ -619,27 +620,32 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				}
 			}
 		}
-
-		outputArray = (char ***)malloc(vec->size * sizeof(char **));
-		// elog(INFO, "Output vector size: %d", vec->size);
-		for (int i = 0; i < vec->size; i++) {
-			outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
-			for (int j = 0; j < vec->natts; j++) {
-				outputArray[i][j] = strdup(vec->data[i][j]);
+		if(!built_pointers){
+			outputArray = (char ***)malloc(vec->size * sizeof(char **));
+			// elog(INFO, "Output vector size: %d", vec->size);
+			for (int i = 0; i < vec->size; i++) {
+				outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
+				for (int j = 0; j < vec->natts; j++) {
+					outputArray[i][j] = strdup(vec->data[i][j]);
+				}
 			}
 		}
 		fair = fairness_check(column_header->data, vec, subjectToStmt);
 		if(!fair){
+			// elog(INFO, "ohoi");
 			MAX_ATTRS = column_header->natts;
 			epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 			num_tuples = vec -> size;
-			buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
+			if(!built_pointers){
+				buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
+				built_pointers = true;
+			}
+			// elog(INFO, "ohoi");
 			l_index = get_upper_value_index(index, bounds[0]) + 1;
 			r_index = get_lower_value_index(index, bounds[1]) + 1;
-			elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
+			// elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 			Range output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 			// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
-			elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 			elog(INFO, "Corrected Query:");
 			if (output.end == num_tuples + 1)
 			{
@@ -657,25 +663,12 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		// 		elog(INFO, "outputArray[%d][%d] = %s", i, j, outputArray[i][j]);
 		// 	}
 		// }
-		for (int i = 0; i < num_tuples; i++) {
-			for (int j = 0; j < vec->natts; j++) {
-				free(outputArray[i][j]);
-			}
-			free(outputArray[i]);
-		}
-		free(outputArray);
 		
-		outputArray = NULL;
-		
-		num_tuples = 0;
-		char_ptr_vector_free(output_vector);
-		free(output_vector);
+		// char_ptr_vector_free(vec);
+		// free(vec);
 
-		char_ptr_vector_free(vec);
-		free(vec);
-
-		header_free(column_header);
-		free(column_header);
+		// header_free(column_header);
+		// free(column_header);
 	}
 	/*
 	 * shutdown tuple receiver, if we started it
@@ -2047,15 +2040,7 @@ ExecutePlan(QueryDesc *queryDesc,
 				break;
 
 		}
-		
-		// for(int i = 0; i < output_vector->size; i++){
-		// 	for(int j = 0; j < output_vector->natts; j++){
-		// 		elog(INFO, "%s ", output_vector->data[i][j]);
-		// 	}
-		// }
-
-		// char_ptr_vector_free(dest->output_vector);
-
+				
 		/*
 		 * Count tuples processed, if this is a SELECT.  (For other operation
 		 * types, the ModifyTable plan node must count the appropriate
@@ -3460,10 +3445,10 @@ bool fairness_check(char **column_headers, CharPtrVector* vec,  SubjectToStmt* s
 	int term_to_compare = abs(count_feature1*Wr- count_feature2*Wb);
 	if(term_to_compare <= epsilon)
 	{
-		elog(INFO, "Fair query");
+		elog(INFO, "FAIR QUERY OUTPUT");
 		return true;
 	}
-	elog(INFO, "Unfair query");
+	elog(INFO, "UNFAIR QUERY OUTPUT");
 	return false;
 }
 
@@ -3744,6 +3729,7 @@ static void int_rbtree_freefunc(RBTNode *node, void *arg)
 }
 void buildingpointers(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt)
 {
+	elog(INFO, "Preprocessing the Given Query");
 	bool newinsert;
 	int cumulative;
 	
@@ -4020,10 +4006,10 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 	color[num_tuples+1]=-1;
 	int disparity = c[end]- c[start-1];
 	
-	elog(INFO, "Printing LJP and RJP arrays:");
-	for (int i = 0; i < num_tuples + 2; i++) {
-		elog(INFO, "Colour: %d, LJP[%d] = %d, RJP[%d] = %d, cumulative: %d", color[i], i, LJP[i], i, RJP[i], c[i]);
-	}
+	// elog(INFO, "Printing LJP and RJP arrays:");
+	// for (int i = 0; i < num_tuples + 2; i++) {
+	// 	elog(INFO, "Colour: %d, LJP[%d] = %d, RJP[%d] = %d, cumulative: %d", color[i], i, LJP[i], i, RJP[i], c[i]);
+	// }
 
 
 	if(abs(disparity)<=epsilon)
@@ -4161,8 +4147,6 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 	}
 	elog(INFO,"Best similarity: %.2f",best_similarity);
 	
-	free(RJP);
-	free(LJP);
     free(c);
 
 	return fair_range;
