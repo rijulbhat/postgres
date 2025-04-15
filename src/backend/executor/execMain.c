@@ -114,6 +114,9 @@ typedef struct Range {
 	int end;
 } Range;
 
+/* Function prototype for createRange */
+Range createRange(int st, int e);
+
 Range createRange(int st, int e) {
 	Range range;
 	range.start = st;
@@ -121,7 +124,7 @@ Range createRange(int st, int e) {
 	return range;
 }
 bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb, double *epsilon, char *column_name);
-bool fairness_check(char **column_headers, CharPtrVector* vec, char *sourceText, int natts, SubjectToStmt* subjectToStmt);
+bool fairness_check(char **column_headers, CharPtrVector* vec, SubjectToStmt* subjectToStmt);
 int my_strcmp(const char *str1, const char *str2);
 int get_attribute_index(char **column_headers, int natts, char *attribute);
 void merge( int left, int mid, int right, int attr_index);
@@ -471,7 +474,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	/*
 	 * startup tuple receiver, if we will be emitting tuples
 	 */
-	// elog(INFO, "HI2");
 	estate->es_processed = 0;
 
 	sendTuples = (operation == CMD_SELECT ||
@@ -482,25 +484,26 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		
 		if (queryDesc->operation == CMD_SELECT)
 		{
-			if (queryDesc->plannedstmt->subjectClause != NULL){
-				// elog(INFO, "Header init");
-				column_header = (Header *) malloc(sizeof(Header));
-				header_init(column_header);
-				column_header->natts = queryDesc->tupDesc->natts;
-				for (int i = 0; i < column_header->natts; i++)
-				{
-					Form_pg_attribute att = TupleDescAttr(queryDesc->tupDesc, i);
-					attribute = (char *)malloc((strlen(NameStr(att->attname)) + 1) * sizeof(char));
-					strcpy(attribute, NameStr(att->attname));
-					header_push(column_header, attribute);
-				}	
-			}
+			// if (queryDesc->plannedstmt->subjectClause != NULL){
+			// elog(INFO, "Header init");
+			column_header = (Header *) malloc(sizeof(Header));
+			header_init(column_header);
+			column_header->natts = queryDesc->tupDesc->natts;
+			for (int i = 0; i < column_header->natts; i++)
+			{
+				Form_pg_attribute att = TupleDescAttr(queryDesc->tupDesc, i);
+				attribute = (char *)malloc((strlen(NameStr(att->attname)) + 1) * sizeof(char));
+				strcpy(attribute, NameStr(att->attname));
+				header_push(column_header, attribute);
+			}	
+			// }
 			output_vector = (CharPtrVector *) malloc(sizeof(CharPtrVector));
 			output_vector->natts = column_header->natts;
 			char_ptr_vector_init(output_vector);
 		}
 		
 	}
+
 	/*
 	 * Run plan, unless direction is NoMovement.
 	 *
@@ -533,7 +536,8 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			elog(ERROR, "Missing abs");
 		}
 
-		Plan *plan = queryDesc->planstate->plan;
+		Plan *plan;
+		plan = queryDesc->planstate->plan;
 		Oid relid = InvalidOid;
 
 		PlanState *ps = queryDesc->planstate;
@@ -549,7 +553,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		if (scanrelid > 0)
 		{
 			RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
-			Oid relid = rte->relid;
+			relid = rte->relid;
 	
 			
 			char_ptr_vector_init(vec);
@@ -567,22 +571,31 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		// 	elog(INFO, "Top-level planstate is not a scan node (type: %d)", nodeTag(ps));
 		// }
 
-		List *qualList = (List *) scan->plan.qual;
+		List *qualList;
+		qualList = (List *) scan->plan.qual;
 		ListCell *lc;
 		int index, n_bounds, l_index, r_index;
 		char* attribute;
 		float bounds[2];
 		
 		n_bounds = 0;
-
+		if (!qualList)
+		{
+			elog(ERROR, "missing where clause");
+		}
+		
+		if (list_length(qualList) == 1)
+		{
+			elog(ERROR, "qualList has only one element, which is not allowed");
+		}
+		
+		if (qualList)
 		foreach(lc, qualList)
 		{
 			Node *node = (Node *) lfirst(lc);
-		
 			if (IsA(node, OpExpr))
 			{
 				OpExpr *opexpr = (OpExpr *) node;
-		
 				List *args = opexpr->args;
 				if (list_length(args) == 2)
 				{
@@ -597,6 +610,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 						// elog(INFO, "Attribute number: %d", var->varattno);
 						index = var->varattno - 1;
 						attribute = column_header->data[index];
+						
 						// elog(INFO, "Constant value: %f", DatumGetFloat8(constant->constvalue));
 						bounds[n_bounds++] = DatumGetFloat8(constant->constvalue);
 						// Optional: get the operator itself
@@ -614,13 +628,12 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				outputArray[i][j] = strdup(vec->data[i][j]);
 			}
 		}
-		fair = fairness_check(column_header->data, vec, queryDesc->sourceText, vec->natts, subjectToStmt); /* new line added */
+		fair = fairness_check(column_header->data, vec, subjectToStmt);
 		if(!fair){
 			MAX_ATTRS = column_header->natts;
 			epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 			num_tuples = vec -> size;
 			buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
-
 			l_index = get_upper_value_index(index, bounds[0]) + 1;
 			r_index = get_lower_value_index(index, bounds[1]) + 1;
 			elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
@@ -650,7 +663,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			}
 			free(outputArray[i]);
 		}
-		
 		free(outputArray);
 		
 		outputArray = NULL;
@@ -3420,89 +3432,39 @@ EvalPlanQualEnd(EPQState *epqstate)
 }
 
 
-bool fairness_check(char **column_headers, CharPtrVector* vec, char *sourceText, int natts, SubjectToStmt* subjectToStmt)
+bool fairness_check(char **column_headers, CharPtrVector* vec,  SubjectToStmt* subjectToStmt)
 {
-	double Cr_value, Cb_value;
 	int Wr, Wb, epsilon;
+	int natts = vec->natts;
 	int idx;
-	bool fair;
 	Wr = 1;
 	Wb = 1;
 	char* Cr = subjectToStmt->lhs_attr;
 	char* Cb = subjectToStmt->rhs_attr;
 	char *column_name = subjectToStmt->attr;
 	epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-	char **unique_values = (char **)malloc(100 * sizeof(char *)); 
-	int *unique_counts = (int *)malloc(100 * sizeof(int));		  
-	
-	for (int i = 0; i < 100; i++)
-	{
-		unique_values[i] = (char *)malloc(100 * sizeof(char));
-	}
-	int unique_count = 0;
 	idx = get_attribute_index(column_headers, natts, column_name);
-
-	for (int i = 0; i < output_vector->size; i++)
+	int count_feature1=0;
+	int count_feature2=0;
+	for(int i =0;i<vec->size;i++)
 	{
-		char *column_value = output_vector->data[i][idx];
-		bool found = false;
-
-		for (int j = 0; j < unique_count; j++)
+		if(strcmp(vec->data[i][idx], Cr) == 0)
 		{
-			if (strcmp(unique_values[j], column_value) == 0)
-			{
-				found = true;
-				unique_counts[j]++;
-				break;
-			}
+			count_feature1++;
 		}
-		if (!found && unique_count < 100)
+		else if(strcmp(vec->data[i][idx], Cb) == 0)
 		{
-			strncpy(unique_values[unique_count], column_value, 100);
-			unique_values[unique_count][99] = '\0'; 
-			unique_counts[unique_count] = 1;
-			unique_count++;
+			count_feature2++;
 		}
 	}
-	Cr_value = 0.0;
-	Cb_value = 0.0;
-
-	for (int i = 0; i < unique_count; i++)
+	int term_to_compare = abs(count_feature1*Wr- count_feature2*Wb);
+	if(term_to_compare <= epsilon)
 	{
-		if (strcmp(unique_values[i], Cr) == 0)
-		{
-			Cr_value = unique_counts[i];
-			break;
-		}
-	}
-
-	for (int i = 0; i < unique_count; i++)
-	{
-		if (strcmp(unique_values[i], Cb) == 0)
-		{
-			Cb_value = unique_counts[i];
-			break;
-		}
-	}
-	fair = ((Wr * Cr_value - Wb * Cb_value) <= epsilon) && (- (Wr * Cr_value - Wb * Cb_value) <= epsilon);
-
-	for (int i = 0; i < 100; i++)
-	{
-		free(unique_values[i]);
-	}
-	free(unique_values);
-	free(unique_counts);
-
-	if (fair){
-		elog(INFO, "Fair Query Output");
+		elog(INFO, "Fair query");
 		return true;
 	}
-	else{
-		elog(INFO, "Unfair Query Output");
-		return false;
-	}
-
-
+	elog(INFO, "Unfair query");
+	return false;
 }
 
 bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb, double *epsilon, char *column_name)
@@ -3784,9 +3746,9 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 {
 	bool newinsert;
 	int cumulative;
+	
 	int sort_attr_index = get_attribute_index(column_headers, natts, attribute);
     int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
-	
 	// elog(INFO, "Attribute index: %d", attr_index);
 	// count_tuples();
 	// elog(INFO, "UFFF");

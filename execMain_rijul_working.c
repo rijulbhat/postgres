@@ -621,6 +621,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				queryArray[i][j] = strdup(output_vector->data[i][j]);
 			}
 		}
+		
 		fair = fairness_check(column_header->data, vec, queryDesc->sourceText, vec->natts, subjectToStmt); /* new line added */
 		if(!fair){
 			MAX_ATTRS = column_header->natts;
