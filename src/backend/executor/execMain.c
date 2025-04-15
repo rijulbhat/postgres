@@ -3784,13 +3784,14 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 {
 	bool newinsert;
 	int cumulative;
-    int attr_index = get_attribute_index(column_headers, natts, attribute);
+	int sort_attr_index = get_attribute_index(column_headers, natts, attribute);
+    int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 	
 	// elog(INFO, "Attribute index: %d", attr_index);
 	// count_tuples();
 	// elog(INFO, "UFFF");
 	
-    merge_sort(0, num_tuples - 1, attr_index);
+    merge_sort(0, num_tuples - 1, sort_attr_index);
 	RBTree* tree = rbt_create(sizeof(IntRBNode),   /* Node size */
                           int_rbtree_comparator, /* Comparator */
                           int_rbtree_combiner,   /* Combiner */
