@@ -148,13 +148,23 @@ int size(mystack* stack);
 int *RJP, *LJP;
 char ***outputArray;
 static bool is_scan_node(Node *node);
-bool built_pointers = false;
-
+// bool reset_outputArrays = true;
+// bool built_pointers = false;
+BoolVector *reset_outputArrays_vec;
+BoolVector *built_pointers_vec;
+PtrVector *table_pointers;
+PtrVector *table_attributes;
+PtrVector *table_LJP;
+PtrVector *table_RJP;
+// PtrVector *pointers;
+// StringVector *attributes;
+StringVector *tables;
+bool reset_tables = true;
 
 /* end of local decls */
 
 
-/* ----------------------------------------------------------------
+/* ----------------------------------------attributes------------------------
  *		ExecutorStart
  *
  *		This routine must be called at the beginning of any execution of any
@@ -436,7 +446,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	bool		sendTuples, fair;
 	MemoryContext oldcontext;
 	SubjectToStmt* subjectToStmt;
-	Header *column_header;
+	StringVector *column_header;
 	char *attribute;
 	int epsilon;
 	/* sanity checks */
@@ -487,20 +497,20 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		{
 			// if (queryDesc->plannedstmt->subjectClause != NULL){
 			// elog(INFO, "Header init");
-			column_header = (Header *) malloc(sizeof(Header));
-			header_init(column_header);
+			column_header = (StringVector *) malloc(sizeof(StringVector));
+			string_vector_init(column_header);
 			column_header->natts = queryDesc->tupDesc->natts;
 			for (int i = 0; i < column_header->natts; i++)
 			{
 				Form_pg_attribute att = TupleDescAttr(queryDesc->tupDesc, i);
 				attribute = (char *)malloc((strlen(NameStr(att->attname)) + 1) * sizeof(char));
 				strcpy(attribute, NameStr(att->attname));
-				header_push(column_header, attribute);
+				string_vector_push(column_header, attribute);
 			}	
 		}
 		
 	}
-
+	// elog(INFO,"HIIII");
 	/*
 	 * Run plan, unless direction is NoMovement.
 	 *
@@ -527,12 +537,70 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 */
 	estate->es_total_processed += estate->es_processed;
 	
+	if(reset_tables){
+		reset_tables = false;
+		tables = (StringVector *) malloc(sizeof(StringVector));
+		string_vector_init(tables);
+		table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
+		ptr_vector_init(table_pointers);
+		table_attributes = (PtrVector *) malloc(sizeof(PtrVector));
+		ptr_vector_init(table_attributes);
+		reset_outputArrays_vec = (BoolVector *) malloc(sizeof(BoolVector));
+		bool_vector_init(reset_outputArrays_vec);
+		built_pointers_vec = (BoolVector *) malloc(sizeof(BoolVector));
+		bool_vector_init(built_pointers_vec);
+		table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
+		ptr_vector_init(table_LJP);
+		table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
+		ptr_vector_init(table_RJP);
+	}
+
+	char *table = print_table_names_from_query(queryDesc);
+	// elog(INFO, "Table name: %s", table);
+	int table_index = string_vector_find(tables, table);
+	// elog(INFO, "Table index: %d", table_index);
+	if (table_index == -1){
+		elog(INFO, "Table not found");
+		string_vector_push(tables, table);
+		bool_vector_push(built_pointers_vec, false);
+		bool_vector_push(reset_outputArrays_vec, true);
+		PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
+		StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
+		PtrVector *new_table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
+		PtrVector *new_table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
+
+		ptr_vector_init(new_table_pointers);
+		string_vector_init(new_table_attributes);
+		ptr_vector_init(new_table_LJP);
+		ptr_vector_init(new_table_RJP);
+
+		ptr_vector_push(table_pointers, (void *)new_table_pointers);
+		ptr_vector_push(table_attributes, (void *)new_table_attributes);
+		ptr_vector_push(table_LJP, (void *)new_table_LJP);
+		ptr_vector_push(table_RJP, (void *)new_table_RJP);
+
+		// elog(INFO, "Pushed table: %s", table);
+		table_index = string_vector_find(tables, table);
+		if (table_index == -1){
+			elog(ERROR, "Table not found");
+		}
+	}
+	// elog(INFO,"HI2");
 	if (queryDesc->operation == CMD_INSERT || queryDesc->operation == CMD_UPDATE || queryDesc->operation == CMD_MERGE || queryDesc->operation == CMD_DELETE){
-		built_pointers = false;
+		built_pointers_vec->data[table_index] = false;
+		reset_outputArrays_vec->data[table_index] = true;
 	}
 
 	if (queryDesc->operation == CMD_SELECT && subjectToStmt != NULL){
-		
+
+		if(reset_outputArrays_vec->data[table_index]){
+			table_pointers->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
+			table_attributes->data[table_index] = (StringVector *) malloc(sizeof(StringVector));
+			ptr_vector_init(table_pointers->data[table_index]);
+			string_vector_init(table_attributes->data[table_index]);
+			reset_outputArrays_vec->data[table_index] = false;
+		}
+
 		if (!subjectToStmt->abs){
 			elog(ERROR, "Missing abs");
 		}
@@ -575,7 +643,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		List *qualList;
 		qualList = (List *) scan->plan.qual;
 		ListCell *lc;
-		int index, n_bounds, l_index, r_index;
+		int index, n_bounds, l_index, r_index, attr_index;
 		char* attribute;
 		float bounds[2];
 		
@@ -620,26 +688,61 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				}
 			}
 		}
-		if(!built_pointers){
-			outputArray = (char ***)malloc(vec->size * sizeof(char **));
-			// elog(INFO, "Output vector size: %d", vec->size);
-			for (int i = 0; i < vec->size; i++) {
-				outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
-				for (int j = 0; j < vec->natts; j++) {
-					outputArray[i][j] = strdup(vec->data[i][j]);
-				}
-			}
-		}
+
 		fair = fairness_check(column_header->data, vec, subjectToStmt);
 		if(!fair){
+
+			attr_index = string_vector_find(table_attributes->data[table_index], attribute);
 			// elog(INFO, "ohoi");
 			MAX_ATTRS = column_header->natts;
 			epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 			num_tuples = vec -> size;
-			if(!built_pointers){
+
+			if(!built_pointers_vec->data[table_index] || attr_index == -1){
+				outputArray = (char ***)malloc(vec->size * sizeof(char **));
+				
+				// elog(INFO, "Output vector size: %d", vec->size);
+				for (int i = 0; i < vec->size; i++) {
+					outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
+					for (int j = 0; j < vec->natts; j++) {
+						outputArray[i][j] = strdup(vec->data[i][j]);
+					}
+				}
+
 				buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
-				built_pointers = true;
+				
+				built_pointers_vec->data[table_index] = true;
+				// elog(INFO, "Built pointers");		
+				if (attr_index != -1) {
+					ptr_vector_replace(table_pointers->data[table_index], attr_index, (void *)outputArray);
+					ptr_vector_replace(table_LJP->data[table_index], attr_index, (void *)LJP);
+					ptr_vector_replace(table_RJP->data[table_index], attr_index, (void *)RJP);
+				} else {
+					ptr_vector_push(table_pointers->data[table_index], (void *)outputArray);
+					ptr_vector_push(table_LJP->data[table_index], (void *)LJP);
+					ptr_vector_push(table_RJP->data[table_index], (void *)RJP);
+					string_vector_push(table_attributes->data[table_index], attribute);
+					// elog(INFO, "pushed attribute: %s", attribute);
+				}
+				elog(INFO, "Pushed attribute: %s", attribute);
 			}
+			
+			else{
+				outputArray = (char ***)ptr_vector_get(table_pointers->data[table_index], attr_index);
+				LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
+				RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
+			}
+			// Print the outputArray for debugging
+			// elog(INFO, "Printing outputArray:");
+			// for (int i = 0; i < vec->size; i++) {
+			// 	for (int j = 0; j < vec->natts; j++) {
+			// 		if (outputArray[i][j] != NULL) {
+			// 			elog(INFO, "outputArray[%d][%d] = %s", i, j, outputArray[i][j]);
+			// 		} else {
+			// 			elog(INFO, "outputArray[%d][%d] = NULL", i, j);
+			// 		}
+			// 	}
+			// }
 			// elog(INFO, "ohoi");
 			l_index = get_upper_value_index(index, bounds[0]) + 1;
 			r_index = get_lower_value_index(index, bounds[1]) + 1;
@@ -655,8 +758,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			{
 				output.start = 1;
 			}
-			elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", print_table_names_from_query(queryDesc), attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
+			elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
 		}
+		// elog(INFO, "Fair: %d", fair);
 		// for (int i = 0; i < vec->size; i++) {
 		// 	for (int j = 0; j < vec->natts; j++) {
 		// 		if (j!=index) continue;
@@ -667,7 +771,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		// char_ptr_vector_free(vec);
 		// free(vec);
 
-		// header_free(column_header);
+		// string_vector_free(column_header);
 		// free(column_header);
 	}
 	/*
@@ -3872,6 +3976,7 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 		}
 
     }
+	// elog(INFO,"NO ERROR IN JUMP POINTERS");
 	// elog(INFO, "Printing left jump pointers:\n");
 	// for (int i = 0; i < num_tuples+2; i++) {
 	// 	elog(INFO, "LJP[%d] = %d\n", i, LJP[i]);
