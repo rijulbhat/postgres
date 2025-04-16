@@ -27,9 +27,9 @@ typedef struct {
 // Function prototypes
 void string_vector_init(StringVector *vec);
 void string_vector_push(StringVector *vec, char *elem);
-char **string_vector_get(StringVector *vec, size_t index);
+char *string_vector_get(StringVector *vec, size_t index);
 void string_vector_free(StringVector *vec);
-
+int string_vector_find(StringVector *vec, char *attribute);
 typedef struct {
     void **data;    // Array of `char*` elements
     size_t size;     // Number of elements
@@ -41,6 +41,7 @@ void ptr_vector_init(PtrVector *vec);
 void ptr_vector_push(PtrVector *vec, void *elem);
 void *ptr_vector_get(PtrVector *vec, size_t index);
 void ptr_vector_free(PtrVector *vec);
+void ptr_vector_replace(PtrVector *vec, size_t index, void *elem);
 
 typedef struct {
     bool *data;    // Array of `char*` elements

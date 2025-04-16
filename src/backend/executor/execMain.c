@@ -690,6 +690,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		}
 
 		fair = fairness_check(column_header->data, vec, subjectToStmt);
+
 		if(!fair){
 
 			attr_index = string_vector_find(table_attributes->data[table_index], attribute);
@@ -3535,6 +3536,7 @@ bool fairness_check(char **column_headers, CharPtrVector* vec,  SubjectToStmt* s
 	idx = get_attribute_index(column_headers, natts, column_name);
 	int count_feature1=0;
 	int count_feature2=0;
+	
 	for(int i =0;i<vec->size;i++)
 	{
 		if(strcmp(vec->data[i][idx], Cr) == 0)
@@ -4256,6 +4258,114 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 
 	return fair_range;
 }
+
+
+Range multicolor_getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
+{
+
+	int num_colors;
+	int *weights;
+	char **C;
+	int **prefix_sums;
+	double best_similarity = 0;
+	Range fair_range = createRange(start,end);
+
+	if(start <=0 || end > num_tuples)
+	{
+		elog(ERROR, "Invalid range");
+		return createRange(-1,-1);
+	}
+    int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+
+	for (int i = 0; i < num_colors; i++)	prefix_sums[i] = malloc((num_tuples) * sizeof(int));
+
+	for (int i = 0; i < num_colors; i++) {
+		for (int j = 0; j < num_tuples; j++) {
+			if(j != 0)
+			{	if (strcmp(outputArray[j][attr_index], C[i]) == 0) {
+					prefix_sums[i][j] = 1 + prefix_sums[i][j - 1];
+				} else {
+					prefix_sums[i][j] = prefix_sums[i][j - 1];
+				}
+			}
+			else{
+				if (strcmp(outputArray[j][attr_index], C[i]) == 0) {
+					prefix_sums[i][j] = 1;
+				} else {
+					prefix_sums[i][j] = 0;
+				}
+			}
+		}
+	}
+	
+	bool is_fair = true;
+
+	for(int i = 0; i < num_colors; i++){
+		for (int j = 0; j < num_colors; j++)
+		{
+			if(i != j)
+			{
+				int count1 = prefix_sums[i][end] - (start == 0 ? 0 : prefix_sums[i][start - 1]);
+				int count2 = prefix_sums[j][end] - (start == 0 ? 0 : prefix_sums[j][start - 1]);
+				int term_to_compare = abs(count1 * weights[i] - count2 * weights[j]);
+				if(term_to_compare > epsilon)
+				{
+					elog(INFO, "UNFAIR QUERY OUTPUT");
+					is_fair = false;
+				}
+			}
+		}
+	}
+
+	if (is_fair)
+	{
+		elog(INFO,"FAIR QUERY OUTPUT");
+		return createRange(start,end);
+	}
+	
+	for(int i = 0; i < num_tuples; i++){
+		for (int j = 0; j < num_tuples; j++)
+		{
+			bool is_fair_range = true;
+			float similarity;
+			for (int k = 0; i < num_colors; k++)
+			{
+				for (int l = 0; l < num_colors; l++)
+				{
+					if(k != l)
+					{
+						int count1 = prefix_sums[k][j] - (i == 0 ? 0 : prefix_sums[k][i - 1]);
+						int count2 = prefix_sums[l][j] - (i == 0 ? 0 : prefix_sums[l][i - 1]);
+						int term_to_compare = abs(count1 * weights[k] - count2 * weights[l]);
+						if(term_to_compare > epsilon)
+						{
+							is_fair_range = false;
+						}
+					}
+				}
+			}
+
+			if (is_fair_range)
+			{
+				similarity = jaccordsimilarity(createRange(i,j), createRange(start,end));
+				if (similarity > best_similarity)
+				{
+					best_similarity = similarity;
+					fair_range = createRange(i,j);
+				}
+			}
+		}
+	}
+
+	elog(INFO,"Best similarity: %.2f",best_similarity);
+
+	for (int i = 0; i < num_colors; i++) {
+		free(prefix_sums[i]);
+	}
+
+	return fair_range;
+}
+
 
 #ifndef max
 #define max(a, b) ((a) > (b) ? (a) : (b))
