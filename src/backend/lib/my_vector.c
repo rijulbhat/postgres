@@ -50,7 +50,7 @@ void string_vector_push(StringVector *vec, char *elem) {
 }
 
 // Get a `char*` from the vector
-char **string_vector_get(StringVector *vec, size_t index) {
+char *string_vector_get(StringVector *vec, size_t index) {
     if (index >= vec->size) return NULL;
     return vec->data[index];
 }

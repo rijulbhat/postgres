@@ -310,7 +310,6 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 	StringInfo	buf = &myState->buf;
 	int			natts = typeinfo->natts;
 	int			i;
-	char        **my_output;
 
 	/* Set or update my derived attribute info, if needed */
 	if (myState->attrinfo != typeinfo || myState->nattrs != natts)
@@ -332,7 +331,6 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 	/*
 	 * send the attributes of this tuple
 	 */
-	my_output = (char **) malloc(natts * sizeof(char *));
 	for (i = 0; i < natts; ++i)
 	{
 		PrinttupAttrInfo *thisState = myState->myinfo + i;
@@ -362,8 +360,6 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 
 			outputstr = OutputFunctionCall(&thisState->finfo, attr);
 			pq_sendcountedtext(buf, outputstr, strlen(outputstr));
-			my_output[i] = (char *) malloc(strlen(outputstr) + 1);
-			strcpy(my_output[i], outputstr);
 		}
 		else
 		{
