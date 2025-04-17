@@ -562,32 +562,35 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	}
 
 	char *table = print_table_names_from_query(queryDesc);
+	int table_index = -1;
 	// elog(INFO, "Table name: %s", table);
-	int table_index = string_vector_find(tables, table);
-	// elog(INFO, "Table index: %d", table_index);
-	if (table_index == -1){
-		string_vector_push(tables, table);
-		bool_vector_push(built_pointers_vec, false);
-		bool_vector_push(reset_outputArrays_vec, true);
-		PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
-		StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
-		PtrVector *new_table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
-		PtrVector *new_table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
-
-		ptr_vector_init(new_table_pointers);
-		string_vector_init(new_table_attributes);
-		ptr_vector_init(new_table_LJP);
-		ptr_vector_init(new_table_RJP);
-
-		ptr_vector_push(table_pointers, (void *)new_table_pointers);
-		ptr_vector_push(table_attributes, (void *)new_table_attributes);
-		ptr_vector_push(table_LJP, (void *)new_table_LJP);
-		ptr_vector_push(table_RJP, (void *)new_table_RJP);
-
-		// elog(INFO, "Pushed table: %s", table);
+	if(table){
 		table_index = string_vector_find(tables, table);
+		// elog(INFO, "Table index: %d", table_index);
 		if (table_index == -1){
-			elog(ERROR, "Table not found");
+			string_vector_push(tables, table);
+			bool_vector_push(built_pointers_vec, false);
+			bool_vector_push(reset_outputArrays_vec, true);
+			PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
+			StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
+			PtrVector *new_table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
+			PtrVector *new_table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
+
+			ptr_vector_init(new_table_pointers);
+			string_vector_init(new_table_attributes);
+			ptr_vector_init(new_table_LJP);
+			ptr_vector_init(new_table_RJP);
+
+			ptr_vector_push(table_pointers, (void *)new_table_pointers);
+			ptr_vector_push(table_attributes, (void *)new_table_attributes);
+			ptr_vector_push(table_LJP, (void *)new_table_LJP);
+			ptr_vector_push(table_RJP, (void *)new_table_RJP);
+
+			// elog(INFO, "Pushed table: %s", table);
+			table_index = string_vector_find(tables, table);
+			if (table_index == -1){
+				elog(ERROR, "Table not found");
+			}
 		}
 	}
 	// elog(INFO,"HI2");
