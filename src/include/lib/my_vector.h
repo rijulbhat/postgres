@@ -27,6 +27,6 @@ typedef struct {
 // Function prototypes
 void header_init(Header *vec);
 void header_push(Header *vec, char *elem);
-char **header_get(Header *vec, size_t index);
+char *header_get(Header *vec, size_t index);
 void header_free(Header *vec);
 #endif

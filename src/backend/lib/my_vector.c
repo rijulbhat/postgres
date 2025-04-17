@@ -50,7 +50,7 @@ void header_push(Header *vec, char *elem) {
 }
 
 // Get a `char*` from the vector
-char **header_get(Header *vec, size_t index) {
+char *header_get(Header *vec, size_t index) {
     if (index >= vec->size) return NULL;
     return vec->data[index];
 }
