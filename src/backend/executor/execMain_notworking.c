@@ -149,7 +149,7 @@ int *RJP, *LJP;
 char ***outputArray;
 static bool is_scan_node(Node *node);
 // bool reset_outputArrays = true;
-bool built_pointers = false;
+// bool built_pointers = false;
 BoolVector *reset_outputArrays_vec;
 BoolVector *built_pointers_vec;
 PtrVector *table_pointers;
@@ -164,7 +164,7 @@ bool reset_tables = true;
 /* end of local decls */
 
 
-/* ----------------------------------------------------------------
+/* ----------------------------------------attributes------------------------
  *		ExecutorStart
  *
  *		This routine must be called at the beginning of any execution of any
@@ -510,7 +510,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		}
 		
 	}
-
+	// elog(INFO,"HIIII");
 	/*
 	 * Run plan, unless direction is NoMovement.
 	 *
@@ -537,7 +537,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 */
 	estate->es_total_processed += estate->es_processed;
 	
-	/* Part of new code from future commit */
 	if(reset_tables){
 		reset_tables = false;
 		tables = (StringVector *) malloc(sizeof(StringVector));
@@ -557,17 +556,8 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	}
 
 	char *table = print_table_names_from_query(queryDesc);
-	fputs(_("\n[Inside execMain] Going to print (char*) table: ... "), stderr);
-	fputs(_(table), stderr);
-	fputs(_("\nOhhh, the misery. Everybody wants to be my enemy"), stderr);
-	fflush(stderr);
-
-	int table_index = -1;
-	if(table){
 	// elog(INFO, "Table name: %s", table);
-	// char *table = "color_data";
 	int table_index = string_vector_find(tables, table);
-	// int table_index = -1;
 	// elog(INFO, "Table index: %d", table_index);
 	if (table_index == -1){
 		elog(INFO, "Table not found");
@@ -595,16 +585,14 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			elog(ERROR, "Table not found");
 		}
 	}
-	}
-	elog(INFO,"HI2");
+	// elog(INFO,"HI2");
 	if (queryDesc->operation == CMD_INSERT || queryDesc->operation == CMD_UPDATE || queryDesc->operation == CMD_MERGE || queryDesc->operation == CMD_DELETE){
-		built_pointers = false;
 		built_pointers_vec->data[table_index] = false;
 		reset_outputArrays_vec->data[table_index] = true;
 	}
 
 	if (queryDesc->operation == CMD_SELECT && subjectToStmt != NULL){
-		
+
 		if(reset_outputArrays_vec->data[table_index]){
 			table_pointers->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
 			table_attributes->data[table_index] = (StringVector *) malloc(sizeof(StringVector));
@@ -700,8 +688,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				}
 			}
 		}
-		
-		
 
 		fair = fairness_check(column_header->data, vec, subjectToStmt);
 		if(!fair){
@@ -774,6 +760,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			}
 			elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
 		}
+		// elog(INFO, "Fair: %d", fair);
 		// for (int i = 0; i < vec->size; i++) {
 		// 	for (int j = 0; j < vec->natts; j++) {
 		// 		if (j!=index) continue;
@@ -784,7 +771,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		// char_ptr_vector_free(vec);
 		// free(vec);
 
-		// header_free(column_header);
+		// string_vector_free(column_header);
 		// free(column_header);
 	}
 	/*
@@ -3989,6 +3976,7 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 		}
 
     }
+	// elog(INFO,"NO ERROR IN JUMP POINTERS");
 	// elog(INFO, "Printing left jump pointers:\n");
 	// for (int i = 0; i < num_tuples+2; i++) {
 	// 	elog(INFO, "LJP[%d] = %d\n", i, LJP[i]);
