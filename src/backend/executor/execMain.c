@@ -70,6 +70,7 @@
 #include "lib/my_vector.h"
 #include "access/printtup.h"
 #include "lib/rbtree.h"
+#include "lib/pairingheap.h"
 #include "lib/ilist.h"
 #include "catalog/namespace.h"  // for get_rel_name()
 #include "access/heapam.h"
@@ -124,7 +125,7 @@ Range createRange(int st, int e) {
 	return range;
 }
 bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb, double *epsilon, char *column_name);
-bool fairness_check(char **column_headers, CharPtrVector* vec, SubjectToStmt* subjectToStmt);
+bool fairness_check(char **column_headers, CharPtrVector* vec, SubjectToStmt* subjectToStmt, float lower_bound, float upper_bound, int col_index);
 int my_strcmp(const char *str1, const char *str2);
 int get_attribute_index(char **column_headers, int natts, char *attribute);
 void merge( int left, int mid, int right, int attr_index);
@@ -135,9 +136,12 @@ void initializestack(mystack* stack, char* name);
 double jaccordsimilarity(Range r1, Range r2);
 void pushstack(mystack* stack, int value);
 void pop(mystack* stack);
+float check();
 char *print_table_names_from_query(QueryDesc *queryDesc);
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
+Range recursivedfs(Range originalrange,char **column_headers, CharPtrVector* vec, SubjectToStmt* subjectToStmt, float lower_bound, float upper_bound, int col_index);
+
 int get_lower_value_index(int index, float value);
 int get_upper_value_index(int index, float value);
 static int num_tuples = 0;
@@ -660,7 +664,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			elog(ERROR, "qualList has only one element, which is not allowed");
 		}
 		
-		if (qualList)
 		foreach(lc, qualList)
 		{
 			Node *node = (Node *) lfirst(lc);
@@ -708,7 +711,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 		if(list_length(subjectToStmt->attr_list) == 2){
 
-			fair = fairness_check(column_header->data, vec, subjectToStmt);
+			fair = fairness_check(column_header->data, vec, subjectToStmt, bounds[0], bounds[1], index);
 			if(!fair){
 				attr_index = string_vector_find(table_attributes->data[table_index], attribute);
 				// elog(INFO, "ohoi");
@@ -793,6 +796,11 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 			output = multicolor_getrange(vec, column_header->data, attribute, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 			// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
+			//%jalu writing this, do not hit
+			Range originalrange = createRange(output.start, output.end);
+			Range recursivedfsoutput = recursivedfs(originalrange, column_header->data, vec, subjectToStmt, bounds[0], bounds[1], index);
+			elog(INFO, "Recursivedfs range: [%d, %d]", recursivedfsoutput.start, recursivedfsoutput.end);
+			//%jalu ending this, do not blame 
 			
 			if (output.end == num_tuples + 1)
 			{
@@ -3575,7 +3583,7 @@ EvalPlanQualEnd(EPQState *epqstate)
 }
 
 
-bool fairness_check(char **column_headers, CharPtrVector* vec,  SubjectToStmt* subjectToStmt)
+bool fairness_check(char **column_headers, CharPtrVector* vec,  SubjectToStmt* subjectToStmt, float lower_bound, float upper_bound, int col_index)
 {
 	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
 	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
@@ -3595,6 +3603,10 @@ bool fairness_check(char **column_headers, CharPtrVector* vec,  SubjectToStmt* s
 	
 	for(int i =0;i<vec->size;i++)
 	{
+		if(atof(vec->data[i][col_index]) > upper_bound+0.00001 || atof(vec->data[i][col_index]) < lower_bound-0.00001)
+		{
+			continue;
+		}
 		if(strcmp(vec->data[i][idx], Cr) == 0)
 		{
 			count_feature1++;
@@ -3857,6 +3869,15 @@ typedef struct IntRBNode
 	int index;
 	int start;
 } IntRBNode;
+typedef struct heapnode
+{
+	struct heapnode *first_child;
+	struct heapnode *next_sibling;
+	struct heap_node *prev_or_parent;
+	Range r;
+	float similarity;
+	
+} heapnode;
 static int int_rbtree_comparator(const RBTNode *a, const RBTNode *b, void *arg)
 {
 	const IntRBNode *nodeA = (const IntRBNode *) a;
@@ -3868,6 +3889,20 @@ static int int_rbtree_comparator(const RBTNode *a, const RBTNode *b, void *arg)
 		return 1;
 	return 0;
 }
+static int heapnode_comparator(const pairingheap_node *a,
+							   const pairingheap_node *b,
+							   void *arg)
+{
+	const heapnode *nodeA = (const heapnode *) a;
+	const heapnode *nodeB = (const heapnode *) b;
+
+	if (nodeA->similarity > nodeB->similarity)
+		return 1; // nodeA has higher similarity
+	else if (nodeA->similarity < nodeB->similarity)
+		return -1; // nodeB has higher similarity
+	else
+		return 0; // Both have equal similarity
+}
 static void int_rbtree_combiner(RBTNode *existing, const RBTNode *newdata, void *arg)
 {
     IntRBNode *existNode = (IntRBNode *) existing;
@@ -3875,6 +3910,7 @@ static void int_rbtree_combiner(RBTNode *existing, const RBTNode *newdata, void 
     /* Overwrite existing value */
    
 }
+
 static RBTNode *int_rbtree_allocfunc(void *arg)
 {
     IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
@@ -4328,8 +4364,6 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 
 Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
 {	
-	int l_index = start - 1;
-	int r_index = end - 1;
 	int num_color = list_length(subjectToStmt->attr_list);
 
 	int *weights = malloc(num_color * sizeof(int));
@@ -4453,7 +4487,7 @@ Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attri
 	for (int i = 0; i < num_color; i++) {
 		free(prefix_sums[i]);
 	}
-
+	
 	return fair_range;
 }
 
@@ -4563,4 +4597,82 @@ void store_table_data(Oid relid, CharPtrVector *vec)
 
     table_endscan(scan);
     table_close(rel, AccessShareLock);
+}
+
+bool validrange(Range r)
+{
+	if(r.start < 0 || r.end < 0 || r.start > num_tuples || r.end > num_tuples)
+	{
+		return false;
+	}
+	else if(r.start > r.end)
+	{
+		return false;
+	}
+	else
+	{
+		return true;
+	}
+}
+
+Range recursivedfs(Range originalrange,char **column_headers, CharPtrVector* vec, SubjectToStmt* subjectToStmt, float lower_bound, float upper_bound, int col_index)
+{
+	pairingheap *currheap = pairingheap_allocate(heapnode_comparator, NULL);
+	heapnode *first_node = (heapnode *) palloc(sizeof(heapnode));
+	first_node->r = originalrange;
+	first_node->similarity = jaccordsimilarity(originalrange, originalrange);
+	pairingheap_add(currheap, (pairingheap_node *) first_node);	
+	
+	while(true)
+	{
+		if(pairingheap_is_empty(currheap))
+		{
+			break;
+		}
+		heapnode *maxsimilarity_node = (heapnode *) pairingheap_remove_first(currheap);
+		bool topsimilarityfair = fairness_check(column_headers, vec, subjectToStmt, maxsimilarity_node->r.start, maxsimilarity_node->r.end,col_index);
+		if(topsimilarityfair)
+		{
+			return maxsimilarity_node->r;
+		}
+		int topstart = maxsimilarity_node->r.start;
+		int topend = maxsimilarity_node->r.end;
+		int topstartminus = topstart - 1;
+		int topendplus = topend + 1;
+		int topstartplus = topstart + 1;
+		int topendminus = topend - 1;
+		Range newrange1 = createRange(topstartminus, topendminus);
+		Range newrange2 = createRange(topstartminus, topendplus);
+		Range newrange3 = createRange(topstartplus, topendminus);
+		Range newrange4 = createRange(topstartplus, topendplus);
+		if(validrange(newrange1))
+		{
+			heapnode *new_node1 = (heapnode *) palloc(sizeof(heapnode));
+			new_node1->r = newrange1;
+			new_node1->similarity = jaccordsimilarity(originalrange, newrange1);
+			if(new_node1->similarity < maxsimilarity_node->similarity)(currheap, (pairingheap_node *) new_node1);
+		}
+		if(validrange(newrange2))
+		{
+			heapnode *new_node2 = (heapnode *) palloc(sizeof(heapnode));
+			new_node2->r = newrange2;
+			new_node2->similarity = jaccordsimilarity(originalrange, newrange2);
+			if(new_node2->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node2);
+		}
+		if(validrange(newrange3))
+		{
+			heapnode *new_node3 = (heapnode *) palloc(sizeof(heapnode));
+			new_node3->r = newrange3;
+			new_node3->similarity = jaccordsimilarity(originalrange, newrange3);
+			if(new_node3->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node3);
+		}
+		if(validrange(newrange4))
+		{
+			heapnode *new_node4 = (heapnode *) palloc(sizeof(heapnode));
+			new_node4->r = newrange4;
+			new_node4->similarity = jaccordsimilarity(originalrange, newrange4);
+			if(new_node4->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node4);
+		}
+	}
+	return createRange(-1,-1);
 }
