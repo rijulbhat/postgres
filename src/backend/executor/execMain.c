@@ -767,6 +767,22 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				// elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 				// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
+				if (output.end == num_tuples + 1)
+				{
+					output.end = num_tuples;
+				}
+				if (output.start == 0)
+				{
+					output.start = 1;
+				}
+				if(output.start == output.end){
+					elog(INFO, "NO CORRECTED QUERY FOUND");
+				}	
+				else{
+					elog(INFO, "CORRECTED QUERY:");
+					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
+				}
+			
 			}
 		}
 		else if(list_length(subjectToStmt->attr_list) > 2){
@@ -778,24 +794,25 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			output = multicolor_getrange(vec, column_header->data, attribute, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 			// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 			
+			if (output.end == num_tuples + 1)
+			{
+				output.end = num_tuples;
+			}
+			if (output.start == 0)
+			{
+				output.start = 1;
+			}
+			if(output.start == output.end){
+				elog(INFO, "NO CORRECTED QUERY FOUND");
+			}	
+			else{
+				elog(INFO, "CORRECTED QUERY:");
+				elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
+			}
 
 		}
 
-		if (output.end == num_tuples + 1)
-		{
-			output.end = num_tuples;
-		}
-		if (output.start == 0)
-		{
-			output.start = 1;
-		}
-		if(output.start == output.end){
-			elog(INFO, "NO CORRECTED QUERY FOUND");
-		}	
-		else{
-			elog(INFO, "CORRECTED QUERY:");
-			elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
-		}
+
 
 		// elog(INFO, "Fair: %d", fair);
 		// for (int i = 0; i < vec->size; i++) {
