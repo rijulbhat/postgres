@@ -412,7 +412,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <node>	vacuum_relation
 %type <selectlimit> opt_select_limit select_limit limit_clause
 
-%type <list>	parse_toplevel stmtmulti routine_body_stmt_list
+%type <list>	parse_toplevel stmtmulti routine_body_stmt_list attr_name_list
 				OptTableElementList TableElementList OptInherit definition
 				OptTypedTableElementList TypedTableElementList
 				reloptions opt_reloptions
@@ -12995,7 +12995,7 @@ simple_select:
 		;
 
 a_into:
-			I_or_F_const '*'
+			I_or_F_const
 			{
 				$$ = $1;
 			}
@@ -13033,6 +13033,40 @@ column_name_const:
 			}
 		;
 
+attr_name_list:
+      a_into lhs_attr_name
+      {
+          AttrWithInto *item = palloc(sizeof(AttrWithInto));
+          item->into_val = $1;      // value from a_into
+          item->attr_name = $2;
+          $$ = list_make1(item);
+      }
+    | attr_name_list ',' a_into lhs_attr_name
+      {
+          AttrWithInto *item = palloc(sizeof(AttrWithInto));
+          item->into_val = $3;
+          item->attr_name = $4;
+          $$ = lappend($1, item);
+      }
+;
+
+subject_clause:
+	  SUBJECT column_name_const TO attr_name_list ',' threshold_value
+	{
+		SubjectToStmt *n = makeNode(SubjectToStmt);
+		n->attr = $2;
+		n->attr_list = $4;
+		n->threshold_val = $6;
+
+		$$ = (Node *) n;
+	}
+	| /* EMPTY */
+	{
+		$$ = NULL;
+	}
+;
+
+/*
 subject_clause:
 			 SUBJECT column_name_const TO a_into lhs_attr_name MathOp a_into rhs_attr_name MathOp threshold_value
 			{ 
@@ -13063,11 +13097,12 @@ subject_clause:
 				$$ = (Node *) n;
 			}
 			
-			| /*EMPTY*/
 			{
 				$$ = NULL;
 			}
 		;
+*/
+
 /*
  * SQL standard WITH clause looks like:
  *

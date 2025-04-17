@@ -4321,18 +4321,18 @@ typedef struct DropSubscriptionStmt
 	DropBehavior behavior;		/* RESTRICT or CASCADE behavior */
 } DropSubscriptionStmt;
 
+typedef struct AttrWithInto
+{
+    Node *into_val;
+    char *attr_name;
+} AttrWithInto;
+
 typedef struct SubjectToStmt
 {
-	NodeTag		type;
-	char	   *attr;			/* Attribute name (e.g., "age") */
-	char	   *lhs_attr;		/* Attribute for first COUNT (e.g., "male") */
-	char	   *rhs_attr;		/* Attribute for second COUNT (e.g., "female") */
-	char	   *op;				/* Operator (e.g., "+-") */
-	char	   *op_rel;			/* Operator (e.g., ">") */
-	Node	   *lhs_const;		/* Multiplier for first COUNT (e.g., 1)  */
-	Node	   *rhs_const;		/* Multiplier for second COUNT (e.g., 2) */
-	Node	   *threshold_val;	/* Threshold for comparison (e.g., 4) */
-	bool		abs;			/* Whether to find abs */
+	NodeTag type;
+	char *attr;
+	List *attr_list;
+	Node *threshold_val;
 } SubjectToStmt;
 
 #endif							/* PARSENODES_H */

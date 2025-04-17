@@ -137,10 +137,12 @@ void pushstack(mystack* stack, int value);
 void pop(mystack* stack);
 char *print_table_names_from_query(QueryDesc *queryDesc);
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
+Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 int get_lower_value_index(int index, float value);
 int get_upper_value_index(int index, float value);
 static int num_tuples = 0;
-int MAX_ATTRS;
+static int MAX_ATTRS = 0;
+static int sort_attr_index = 0;
 void store_table_data(Oid relid, CharPtrVector *vec);
 void pop(mystack* stack);
 int top(mystack* stack);
@@ -560,7 +562,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	int table_index = string_vector_find(tables, table);
 	// elog(INFO, "Table index: %d", table_index);
 	if (table_index == -1){
-		elog(INFO, "Table not found");
 		string_vector_push(tables, table);
 		bool_vector_push(built_pointers_vec, false);
 		bool_vector_push(reset_outputArrays_vec, true);
@@ -599,10 +600,6 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			ptr_vector_init(table_pointers->data[table_index]);
 			string_vector_init(table_attributes->data[table_index]);
 			reset_outputArrays_vec->data[table_index] = false;
-		}
-
-		if (!subjectToStmt->abs){
-			elog(ERROR, "Missing abs");
 		}
 
 		Plan *plan;
@@ -648,6 +645,11 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		float bounds[2];
 		
 		n_bounds = 0;
+		
+		if (list_length(subjectToStmt->attr_list) <= 1) {
+			elog(ERROR, "SubjectToStmt attribute list must have more than one element.");
+		}
+		
 		if (!qualList)
 		{
 			elog(ERROR, "missing where clause");
@@ -689,78 +691,112 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			}
 		}
 
-		fair = fairness_check(column_header->data, vec, subjectToStmt);
+		num_tuples = vec->size;		
+		outputArray = (char ***)malloc(vec->size * sizeof(char **));
+					
+		// elog(INFO, "Output vector size: %d", vec->size);
+		for (int i = 0; i < vec->size; i++) {
+			outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
+			for (int j = 0; j < vec->natts; j++) {
+				outputArray[i][j] = strdup(vec->data[i][j]);
+			}
+		}
+		
+		sort_attr_index = get_attribute_index(column_header->data, vec->natts, attribute);
+		MAX_ATTRS = column_header->natts;
+		Range output;
 
-		if(!fair){
+		if(list_length(subjectToStmt->attr_list) == 2){
 
-			attr_index = string_vector_find(table_attributes->data[table_index], attribute);
-			// elog(INFO, "ohoi");
-			MAX_ATTRS = column_header->natts;
-			epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-			num_tuples = vec -> size;
-
-			if(!built_pointers_vec->data[table_index] || attr_index == -1){
-				outputArray = (char ***)malloc(vec->size * sizeof(char **));
+			fair = fairness_check(column_header->data, vec, subjectToStmt);
+			if(!fair){
+				attr_index = string_vector_find(table_attributes->data[table_index], attribute);
+				// elog(INFO, "ohoi");
 				
-				// elog(INFO, "Output vector size: %d", vec->size);
-				for (int i = 0; i < vec->size; i++) {
-					outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
-					for (int j = 0; j < vec->natts; j++) {
-						outputArray[i][j] = strdup(vec->data[i][j]);
+				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
+				num_tuples = vec -> size;
+
+				if(!built_pointers_vec->data[table_index] || attr_index == -1){
+					outputArray = (char ***)malloc(vec->size * sizeof(char **));
+					
+					// elog(INFO, "Output vector size: %d", vec->size);
+					for (int i = 0; i < vec->size; i++) {
+						outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
+						for (int j = 0; j < vec->natts; j++) {
+							outputArray[i][j] = strdup(vec->data[i][j]);
+						}
 					}
-				}
 
-				buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
-				
-				built_pointers_vec->data[table_index] = true;
-				// elog(INFO, "Built pointers");		
-				if (attr_index != -1) {
-					ptr_vector_replace(table_pointers->data[table_index], attr_index, (void *)outputArray);
-					ptr_vector_replace(table_LJP->data[table_index], attr_index, (void *)LJP);
-					ptr_vector_replace(table_RJP->data[table_index], attr_index, (void *)RJP);
-				} else {
-					ptr_vector_push(table_pointers->data[table_index], (void *)outputArray);
-					ptr_vector_push(table_LJP->data[table_index], (void *)LJP);
-					ptr_vector_push(table_RJP->data[table_index], (void *)RJP);
-					string_vector_push(table_attributes->data[table_index], attribute);
-					// elog(INFO, "pushed attribute: %s", attribute);
+					buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
+					
+					built_pointers_vec->data[table_index] = true;
+					// elog(INFO, "Built pointers");		
+					if (attr_index != -1) {
+						ptr_vector_replace(table_pointers->data[table_index], attr_index, (void *)outputArray);
+						ptr_vector_replace(table_LJP->data[table_index], attr_index, (void *)LJP);
+						ptr_vector_replace(table_RJP->data[table_index], attr_index, (void *)RJP);
+					} else {
+						ptr_vector_push(table_pointers->data[table_index], (void *)outputArray);
+						ptr_vector_push(table_LJP->data[table_index], (void *)LJP);
+						ptr_vector_push(table_RJP->data[table_index], (void *)RJP);
+						string_vector_push(table_attributes->data[table_index], attribute);
+						// elog(INFO, "pushed attribute: %s", attribute);
+					}
+					elog(INFO, "Pushed attribute: %s", attribute);
 				}
-				elog(INFO, "Pushed attribute: %s", attribute);
+				
+				else{
+					outputArray = (char ***)ptr_vector_get(table_pointers->data[table_index], attr_index);
+					LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
+					RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
+				}
+				// Print the outputArray for debugging
+				// elog(INFO, "Printing outputArray:");
+				// for (int i = 0; i < vec->size; i++) {
+				// 	for (int j = 0; j < vec->natts; j++) {
+				// 		if (outputArray[i][j] != NULL) {
+				// 			elog(INFO, "outputArray[%d][%d] = %s", i, j, outputArray[i][j]);
+				// 		} else {
+				// 			elog(INFO, "outputArray[%d][%d] = NULL", i, j);
+				// 		}
+				// 	}
+				// }
+				// elog(INFO, "ohoi");
+				l_index = get_upper_value_index(index, bounds[0]) + 1;
+				r_index = get_lower_value_index(index, bounds[1]) + 1;
+				// elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
+				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
+				// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 			}
+		}
+		else if(list_length(subjectToStmt->attr_list) > 2){
 			
-			else{
-				outputArray = (char ***)ptr_vector_get(table_pointers->data[table_index], attr_index);
-				LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
-				RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
-			}
-			// Print the outputArray for debugging
-			// elog(INFO, "Printing outputArray:");
-			// for (int i = 0; i < vec->size; i++) {
-			// 	for (int j = 0; j < vec->natts; j++) {
-			// 		if (outputArray[i][j] != NULL) {
-			// 			elog(INFO, "outputArray[%d][%d] = %s", i, j, outputArray[i][j]);
-			// 		} else {
-			// 			elog(INFO, "outputArray[%d][%d] = NULL", i, j);
-			// 		}
-			// 	}
-			// }
-			// elog(INFO, "ohoi");
+			merge_sort(0, num_tuples - 1, sort_attr_index);
 			l_index = get_upper_value_index(index, bounds[0]) + 1;
 			r_index = get_lower_value_index(index, bounds[1]) + 1;
-			// elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
-			Range output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
+			epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
+			output = multicolor_getrange(vec, column_header->data, attribute, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 			// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
-			elog(INFO, "Corrected Query:");
-			if (output.end == num_tuples + 1)
-			{
-				output.end = num_tuples;
-			}
-			if (output.start == 0)
-			{
-				output.start = 1;
-			}
+			
+
+		}
+
+		if (output.end == num_tuples + 1)
+		{
+			output.end = num_tuples;
+		}
+		if (output.start == 0)
+		{
+			output.start = 1;
+		}
+		if(output.start == output.end){
+			elog(INFO, "NO CORRECTED QUERY FOUND");
+		}	
+		else{
+			elog(INFO, "CORRECTED QUERY:");
 			elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
 		}
+
 		// elog(INFO, "Fair: %d", fair);
 		// for (int i = 0; i < vec->size; i++) {
 		// 	for (int j = 0; j < vec->natts; j++) {
@@ -3524,13 +3560,16 @@ EvalPlanQualEnd(EPQState *epqstate)
 
 bool fairness_check(char **column_headers, CharPtrVector* vec,  SubjectToStmt* subjectToStmt)
 {
+	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+
 	int Wr, Wb, epsilon;
 	int natts = vec->natts;
 	int idx;
-	Wr = 1;
-	Wb = 1;
-	char* Cr = subjectToStmt->lhs_attr;
-	char* Cb = subjectToStmt->rhs_attr;
+	Wr = ((A_Const*)item0->into_val)->val.ival.ival;
+	Wb = ((A_Const*)item1->into_val)->val.ival.ival;
+	char* Cr = item0->attr_name;
+	char* Cb = item1->attr_name;
 	char *column_name = subjectToStmt->attr;
 	epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 	idx = get_attribute_index(column_headers, natts, column_name);
@@ -3736,11 +3775,13 @@ void merge(int left, int mid, int right, int attr_index) {
     }
 
     for (int i = 0; i < n1; i++)
-        for (int j = 0; j < MAX_ATTRS; j++)
+        for (int j = 0; j < MAX_ATTRS; j++){
             L[i][j] = outputArray[left + i][j];
+		}
     for (int i = 0; i < n2; i++)
-        for (int j = 0; j < MAX_ATTRS; j++)
+        for (int j = 0; j < MAX_ATTRS; j++){
             R[i][j] = outputArray[mid + 1 + i][j];
+		}
 
     int i = 0, j = 0, k = left;
     while (i < n1 && j < n2) {
@@ -3755,6 +3796,7 @@ void merge(int left, int mid, int right, int attr_index) {
         }
         k++;
     }
+		
 
     while (i < n1) {
         for (int l = 0; l < MAX_ATTRS; l++)
@@ -3778,6 +3820,7 @@ void merge(int left, int mid, int right, int attr_index) {
     }
     free(L);
     free(R);
+	
 }
 void merge_sort(int left, int right, int attr_index) {
     if (left < right) {
@@ -3864,8 +3907,11 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 		LJP[i] = -1;
     }
 	// elog(INFO, "AAAAA");
-	char* feature1 = subjectToStmt->lhs_attr;
-	char* feature2 = subjectToStmt->rhs_attr;
+	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+
+	char* feature1 = item0->attr_name;
+	char* feature2 = item1->attr_name;
 	for (int i = 0; i < num_tuples; i++) {
         if (my_strcmp(outputArray[i][attr_index], feature2) == 0) {
 			color[i+1]=-1;
@@ -4087,8 +4133,11 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 	c[num_tuples+1]=0;
 	int cumulative = 0;
 
-	char* feature1 = subjectToStmt->lhs_attr;
-	char* feature2 = subjectToStmt->rhs_attr;
+	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+
+	char* feature1 = item0->attr_name;
+	char* feature2 = item1->attr_name;
 
     for (int i = 0; i < num_tuples+1; i++) {
 		if(i>=1 && i<=num_tuples)
@@ -4260,26 +4309,48 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 }
 
 
-Range multicolor_getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
-{
+Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
+{	
+	int l_index = start - 1;
+	int r_index = end - 1;
+	int num_color = list_length(subjectToStmt->attr_list);
 
-	int num_colors;
-	int *weights;
-	char **C;
+	int *weights = malloc(num_color * sizeof(int));
+	char **C = malloc(num_color * sizeof(char *));
+
+	int idx = 0;
+
+	ListCell *lc;
+	foreach(lc, subjectToStmt->attr_list)  // stmt is your SubjectToStmt*
+	{
+		
+		AttrWithInto *item = (AttrWithInto *) lfirst(lc);
+
+		weights[idx] = ((A_Const*)item->into_val)->val.ival.ival;
+		C[idx] = pstrdup(item->attr_name);
+
+		idx++;
+	}
+	
 	int **prefix_sums;
 	double best_similarity = 0;
-	Range fair_range = createRange(start,end);
+	Range fair_range = createRange(-1,-1);
 
-	if(start <=0 || end > num_tuples)
+	if(start <= 0 || end > num_tuples)
 	{
 		elog(ERROR, "Invalid range");
 		return createRange(-1,-1);
 	}
+
     int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 
-	for (int i = 0; i < num_colors; i++)	prefix_sums[i] = malloc((num_tuples) * sizeof(int));
+	prefix_sums = malloc(num_color * sizeof(int *));
 
-	for (int i = 0; i < num_colors; i++) {
+	for (int i = 0; i < num_color; i++)	{
+		prefix_sums[i] = malloc((num_tuples) * sizeof(int)); 
+	}
+
+	for (int i = 0; i < num_color; i++) {
 		for (int j = 0; j < num_tuples; j++) {
 			if(j != 0)
 			{	if (strcmp(outputArray[j][attr_index], C[i]) == 0) {
@@ -4297,20 +4368,19 @@ Range multicolor_getrange(char **column_headers, int natts, SubjectToStmt* subje
 			}
 		}
 	}
-	
+
+
 	bool is_fair = true;
 
-	for(int i = 0; i < num_colors; i++){
-		for (int j = 0; j < num_colors; j++)
-		{
+	for(int i = 0; i < num_color; i++){
+		for (int j = 0; j < num_color; j++){
 			if(i != j)
 			{
-				int count1 = prefix_sums[i][end] - (start == 0 ? 0 : prefix_sums[i][start - 1]);
-				int count2 = prefix_sums[j][end] - (start == 0 ? 0 : prefix_sums[j][start - 1]);
+				int count1 = prefix_sums[i][end - 1] - (start == 1 ? 0 : prefix_sums[i][start - 1 - 1]);
+				int count2 = prefix_sums[j][end - 1] - (start == 1 ? 0 : prefix_sums[j][start - 1 - 1]);
 				int term_to_compare = abs(count1 * weights[i] - count2 * weights[j]);
 				if(term_to_compare > epsilon)
 				{
-					elog(INFO, "UNFAIR QUERY OUTPUT");
 					is_fair = false;
 				}
 			}
@@ -4322,15 +4392,19 @@ Range multicolor_getrange(char **column_headers, int natts, SubjectToStmt* subje
 		elog(INFO,"FAIR QUERY OUTPUT");
 		return createRange(start,end);
 	}
+	else
+	{
+		elog(INFO,"UNFAIR QUERY OUTPUT");
+	}
 	
 	for(int i = 0; i < num_tuples; i++){
 		for (int j = 0; j < num_tuples; j++)
 		{
 			bool is_fair_range = true;
 			float similarity;
-			for (int k = 0; i < num_colors; k++)
+			for (int k = 0; k < num_color; k++)
 			{
-				for (int l = 0; l < num_colors; l++)
+				for (int l = 0; l < num_color; l++)
 				{
 					if(k != l)
 					{
@@ -4347,11 +4421,11 @@ Range multicolor_getrange(char **column_headers, int natts, SubjectToStmt* subje
 
 			if (is_fair_range)
 			{
-				similarity = jaccordsimilarity(createRange(i,j), createRange(start,end));
+				similarity = jaccordsimilarity(createRange(i+1,j+1), createRange(start,end));
 				if (similarity > best_similarity)
 				{
 					best_similarity = similarity;
-					fair_range = createRange(i,j);
+					fair_range = createRange(i+1,j+1);
 				}
 			}
 		}
@@ -4359,7 +4433,7 @@ Range multicolor_getrange(char **column_headers, int natts, SubjectToStmt* subje
 
 	elog(INFO,"Best similarity: %.2f",best_similarity);
 
-	for (int i = 0; i < num_colors; i++) {
+	for (int i = 0; i < num_color; i++) {
 		free(prefix_sums[i]);
 	}
 
