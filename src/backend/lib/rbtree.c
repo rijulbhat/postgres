@@ -819,6 +819,26 @@ rbt_begin_iterate(RBTree *rbt, RBTOrderControl ctrl, RBTreeIterator *iter)
 	}
 }
 
+rbt_begin_iterate_from(RBTree *rbt, RBTOrderControl ctrl, RBTreeIterator *iter, RBTNode *start)
+{
+	/* Common initialization for all traversal orders */
+	iter->rbt = rbt;
+	iter->last_visited = start;
+	iter->is_over = (rbt->root == RBTNIL);
+
+	switch (ctrl)
+	{
+		case LeftRightWalk:		/* visit left, then self, then right */
+			iter->iterate = rbt_left_right_iterator;
+			break;
+		case RightLeftWalk:		/* visit right, then self, then left */
+			iter->iterate = rbt_right_left_iterator;
+			break;
+		default:
+			elog(ERROR, "unrecognized rbtree iteration order: %d", ctrl);
+	}
+}
+
 /*
  * rbt_iterate: return the next node in traversal order, or NULL if no more
  */

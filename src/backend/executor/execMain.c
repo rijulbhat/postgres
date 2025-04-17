@@ -113,8 +113,17 @@ static void EvalPlanQualStart(EPQState *epqstate, Plan *planTree);
 typedef struct Range {
 	int start;
 	int end;
+	bool valid;
+	double similarity;
 } Range;
-
+typedef struct IntRBNode
+{
+	RBTNode rbt_node;  /* Base RBTNode (must be first) */
+	int key;           /* Integer key */
+	int *values;         /* Integer value */
+	int index;
+	int start;
+} IntRBNode;
 /* Function prototype for createRange */
 Range createRange(int st, int e);
 
@@ -131,6 +140,9 @@ int get_attribute_index(char **column_headers, int natts, char *attribute);
 void merge( int left, int mid, int right, int attr_index);
 void merge_sort(int left, int right, int attr_index);
 void buildingpointers(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt);
+void buildingpointers_w(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt);
+void insert_val(RBTree *rbt, int key, int value);
+IntRBNode *get_node(RBTree *rbt, int key);
 int jp(char **column_headers, char *sourceText, int natts, char *attribute,int curr,int color,char * dir,int *LJP,int* RJP,int * colorarray);
 void initializestack(mystack* stack, char* name);
 double jaccordsimilarity(Range r1, Range r2);
@@ -138,6 +150,7 @@ void pushstack(mystack* stack, int value);
 void pop(mystack* stack);
 float check();
 char *print_table_names_from_query(QueryDesc *queryDesc);
+void update_range(Range* range, int actualStart, int actualEnd, int outputStart, int outputEnd);
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range recursivedfs(Range originalrange,char **column_headers, CharPtrVector* vec, SubjectToStmt* subjectToStmt, float lower_bound, float upper_bound, int col_index);
@@ -152,6 +165,7 @@ void pop(mystack* stack);
 int top(mystack* stack);
 int size(mystack* stack);
 int *RJP, *LJP;
+int *fwdPosPtr, *fwdNegPtr, *prevPosPtr, *prevNegPtr;
 char ***outputArray;
 static bool is_scan_node(Node *node);
 // bool reset_outputArrays = true;
@@ -717,45 +731,49 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 			fair = fairness_check(column_header->data, vec, subjectToStmt, bounds[0], bounds[1], index);
 			if(!fair){
 				attr_index = string_vector_find(table_attributes->data[table_index], attribute);
+
+				buildingpointers_w(column_header->data, attribute, vec->natts, subjectToStmt);
 				// elog(INFO, "ohoi");
 				
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-				num_tuples = vec -> size;
+				// num_tuples = vec -> size;
 
-				if(!built_pointers_vec->data[table_index] || attr_index == -1){
-					outputArray = (char ***)malloc(vec->size * sizeof(char **));
+				// if(!built_pointers_vec->data[table_index] || attr_index == -1){
+				// 	outputArray = (char ***)malloc(vec->size * sizeof(char **));
 					
-					// elog(INFO, "Output vector size: %d", vec->size);
-					for (int i = 0; i < vec->size; i++) {
-						outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
-						for (int j = 0; j < vec->natts; j++) {
-							outputArray[i][j] = strdup(vec->data[i][j]);
-						}
-					}
+				// 	// elog(INFO, "Output vector size: %d", vec->size);
+				// 	for (int i = 0; i < vec->size; i++) {
+				// 		outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
+				// 		for (int j = 0; j < vec->natts; j++) {
+				// 			outputArray[i][j] = strdup(vec->data[i][j]);
+				// 		}
+				// 	}
+					
+					
+				// 	buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
 
-					buildingpointers(column_header->data, attribute, vec->natts, subjectToStmt);
 					
-					built_pointers_vec->data[table_index] = true;
-					// elog(INFO, "Built pointers");		
-					if (attr_index != -1) {
-						ptr_vector_replace(table_pointers->data[table_index], attr_index, (void *)outputArray);
-						ptr_vector_replace(table_LJP->data[table_index], attr_index, (void *)LJP);
-						ptr_vector_replace(table_RJP->data[table_index], attr_index, (void *)RJP);
-					} else {
-						ptr_vector_push(table_pointers->data[table_index], (void *)outputArray);
-						ptr_vector_push(table_LJP->data[table_index], (void *)LJP);
-						ptr_vector_push(table_RJP->data[table_index], (void *)RJP);
-						string_vector_push(table_attributes->data[table_index], attribute);
-						// elog(INFO, "pushed attribute: %s", attribute);
-					}
-					elog(INFO, "Pushed attribute: %s", attribute);
-				}
+				// 	built_pointers_vec->data[table_index] = true;
+				// 	// elog(INFO, "Built pointers");		
+				// 	if (attr_index != -1) {
+				// 		ptr_vector_replace(table_pointers->data[table_index], attr_index, (void *)outputArray);
+				// 		ptr_vector_replace(table_LJP->data[table_index], attr_index, (void *)LJP);
+				// 		ptr_vector_replace(table_RJP->data[table_index], attr_index, (void *)RJP);
+				// 	} else {
+				// 		ptr_vector_push(table_pointers->data[table_index], (void *)outputArray);
+				// 		ptr_vector_push(table_LJP->data[table_index], (void *)LJP);
+				// 		ptr_vector_push(table_RJP->data[table_index], (void *)RJP);
+				// 		string_vector_push(table_attributes->data[table_index], attribute);
+				// 		// elog(INFO, "pushed attribute: %s", attribute);
+				// 	}
+				// 	elog(INFO, "Pushed attribute: %s", attribute);
+				// }
 				
-				else{
-					outputArray = (char ***)ptr_vector_get(table_pointers->data[table_index], attr_index);
-					LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
-					RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
-				}
+				// else{
+				// 	outputArray = (char ***)ptr_vector_get(table_pointers->data[table_index], attr_index);
+				// 	LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
+				// 	RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
+				// }
 				// Print the outputArray for debugging
 				// elog(INFO, "Printing outputArray:");
 				// for (int i = 0; i < vec->size; i++) {
@@ -770,9 +788,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				// elog(INFO, "ohoi");
 				l_index = get_upper_value_index(index, bounds[0]) + 1;
 				r_index = get_lower_value_index(index, bounds[1]) + 1;
-				// elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
+				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
-				// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
+				elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 				if (output.end == num_tuples + 1)
 				{
 					output.end = num_tuples;
@@ -3864,14 +3882,6 @@ void merge_sort(int left, int right, int attr_index) {
         merge(left, mid, right, attr_index);
     }
 }
-typedef struct IntRBNode
-{
-	RBTNode rbt_node;  /* Base RBTNode (must be first) */
-	int key;           /* Integer key */
-	int *values;         /* Integer value */
-	int index;
-	int start;
-} IntRBNode;
 typedef struct heapnode
 {
 	struct heapnode *first_child;
@@ -4080,6 +4090,21 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 		}
 
     }
+
+	// Checking if tree iterator works or not
+	// RBTreeIterator* iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
+	// IntRBNode *node = (IntRBNode *) palloc(sizeof(IntRBNode));
+	// node->key = -2;
+	// IntRBNode *node1 = (IntRBNode *) rbt_find_great(tree, node, 0);
+	// rbt_begin_iterate_from(tree,LeftRightWalk,iter,node1);
+	// while(node1){
+	// 	elog(INFO, "Key: %d\n", node1->key);
+	// 	for (int j = 0; j < node1->index; j++) 
+	// 	{
+	// 		elog(INFO, "%d\n", node1->values[j]);
+	// 	}
+	// 	node1 = rbt_iterate(iter);
+	// }
 	// elog(INFO,"NO ERROR IN JUMP POINTERS");
 	// elog(INFO, "Printing left jump pointers:\n");
 	// for (int i = 0; i < num_tuples+2; i++) {
@@ -4089,6 +4114,208 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 	// elog(INFO,"%d",jp(column_headers,sourceText,natts,attribute,13,-1,"left",LJP,RJP,color));
     return;
 }
+
+void insert_val(RBTree *rbt, int key, int value){
+	IntRBNode node;
+	node.key = key;
+	IntRBNode *foundNode = (IntRBNode *) rbt_find(rbt, (RBTNode *) &node);
+	if(foundNode)
+	{
+		foundNode->values[foundNode->index] = value;
+		foundNode->index++;
+	}
+	else
+	{
+		IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
+		newNode->key = key;
+		newNode->values = (int *) palloc(num_tuples * sizeof(int));
+		newNode->values[0] = value;
+		newNode->index = 1;
+		newNode->start = 0;
+		bool newinsert;
+		rbt_insert(rbt, (RBTNode *) newNode, &newinsert);
+	}
+}
+IntRBNode *get_node(RBTree *rbt, int key){
+	IntRBNode node;
+	node.key = key;
+	RBTNode *foundNode = rbt_find(rbt, (RBTNode *) &node);
+	return (IntRBNode *) foundNode;
+}
+
+
+void buildingpointers_w(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt){
+	elog(INFO, "Preprocessing buildpointer with weights for the Given Query");
+	bool newinsert;
+	int cumulative;
+	
+	int sort_attr_index = get_attribute_index(column_headers, natts, attribute);
+	int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+	merge_sort(0, num_tuples - 1, sort_attr_index);
+	RBTree* fwdPosBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+						  int_rbtree_comparator, /* Comparator */
+						  int_rbtree_combiner,   /* Combiner */
+						  int_rbtree_allocfunc,  /* Allocator */
+						  int_rbtree_freefunc,   /* Free function */
+						  NULL); 
+	RBTree* fwdNegBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+	int_rbtree_comparator, /* Comparator */
+	int_rbtree_combiner,   /* Combiner */
+	int_rbtree_allocfunc,  /* Allocator */
+	int_rbtree_freefunc,   /* Free function */
+	NULL); 
+	cumulative = 0;
+
+	fwdPosPtr = (int *)malloc((num_tuples+2) * sizeof(int));
+	fwdNegPtr = (int *)malloc((num_tuples+2) * sizeof(int));
+	int *c = (int *)malloc((num_tuples+2) * sizeof(int));
+	int *color = (int *)malloc((num_tuples+2) * sizeof(int));
+	for (int i = 0; i < num_tuples+2; i++) 
+	{
+		fwdPosPtr[i] = -1;
+		fwdNegPtr[i] = -1;
+	}
+	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+	int w1;
+	if (item0->into_val == NULL) {
+		w1 = 1;
+	} else {
+		w1 = ((A_Const*)item0->into_val)->val.ival.ival;
+	}
+
+	int w2;
+	if (item1->into_val == NULL) {
+		w2 = -1;
+	} else {
+		w2 = -((A_Const*)item1->into_val)->val.ival.ival;
+	}
+
+	char* feature1 = item0->attr_name;
+	char* feature2 = item1->attr_name;
+	for (int i = 0; i < num_tuples; i++) {
+        if (my_strcmp(outputArray[i][attr_index], feature2) == 0) {
+			color[i+1]=w2;
+        } else if (my_strcmp(outputArray[i][attr_index], feature1) == 0) {
+			color[i+1]=w1;
+        }
+	}
+	// elog(INFO,"color[7]:%d",color[7]);
+	c[0]=0;
+	c[num_tuples+1]=0;
+	color[0]=0;
+	color[num_tuples+1]=0;
+	
+	for (int i = 0; i < num_tuples+1; i++){
+		if(i>=1 && i<=num_tuples)
+		{
+			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
+				cumulative += w2;
+			} else if (my_strcmp(outputArray[i-1][attr_index], feature1) == 0) {
+				cumulative += w1;
+			}
+			c[i] = cumulative;
+		}	
+
+		RBTreeIterator *iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
+		rbt_begin_iterate(fwdPosBST, LeftRightWalk, iter);
+		IntRBNode *node = (IntRBNode *) rbt_iterate(iter);
+		while (node && node->key < c[i]) {
+			for (int j = node->start; j < node->index; j++) {
+				fwdPosPtr[node->values[j]] = i;
+			}
+			node->start = node->index;
+			node = rbt_iterate(iter);
+		}
+		node = (IntRBNode *) palloc(sizeof(IntRBNode));
+		node->key = c[i];
+		node = rbt_find_great(fwdNegBST, node, 0);
+		rbt_begin_iterate_from(fwdNegBST, LeftRightWalk, iter, node);
+		while (node) {
+			for (int j = node->start; j < node->index; j++) {
+				fwdNegPtr[node->values[j]] = i;
+			}
+			node->start = node->index;
+			node = rbt_iterate(iter);
+		}
+		insert_val(fwdPosBST, c[i], i);
+		insert_val(fwdNegBST, c[i], i);
+
+	}
+
+	pfree(fwdPosBST);
+	pfree(fwdNegBST);
+
+	RBTree* prevPosBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+						int_rbtree_comparator, /* Comparator */
+						int_rbtree_combiner,   /* Combiner */
+						int_rbtree_allocfunc,  /* Allocator */
+						int_rbtree_freefunc,   /* Free function */
+						NULL); 
+	RBTree* prevNegBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+	int_rbtree_comparator, /* Comparator */
+	int_rbtree_combiner,   /* Combiner */
+	int_rbtree_allocfunc,  /* Allocator */
+	int_rbtree_freefunc,   /* Free function */
+	NULL); 
+
+	cumulative = 0;
+	c = (int *)malloc((num_tuples+2) * sizeof(int));
+	c[0]=0;
+	c[num_tuples+1]=0;
+	prevPosPtr = (int *)malloc((num_tuples+2) * sizeof(int));
+	prevNegPtr = (int *)malloc((num_tuples+2) * sizeof(int));
+	for (int i = 0; i < num_tuples+2; i++) 
+	{
+		prevPosPtr[i] = -1;
+		prevNegPtr[i] = -1;
+	}
+
+	for(int i = num_tuples+1; i >=1; i--) {
+		if(i>=1 && i<=num_tuples)
+		{
+			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
+				cumulative += w2;
+			} else if (my_strcmp(outputArray[i-1][attr_index], feature1) == 0) {
+				cumulative += w1;
+			}
+			c[i] = cumulative;
+		}	
+		RBTreeIterator *iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
+		rbt_begin_iterate(prevPosBST, LeftRightWalk, iter);
+		IntRBNode *node = (IntRBNode *) rbt_iterate(iter);
+		while (node && node->key < c[i]) {
+			for (int j = node->start; j < node->index; j++) {
+				prevPosPtr[node->values[j]] = i;
+			}
+			node->start = node->index;
+			node = rbt_iterate(iter);
+		}
+		node = (IntRBNode *) palloc(sizeof(IntRBNode));
+		node->key = c[i];
+		node = rbt_find_great(prevNegBST, node, 0);
+		rbt_begin_iterate_from(prevNegBST, LeftRightWalk, iter, node);
+		while (node) {
+			for (int j = node->start; j < node->index; j++) {
+				prevNegPtr[node->values[j]] = i;
+			}
+			node->start = node->index;
+			node = rbt_iterate(iter);
+		}
+		
+		insert_val(prevPosBST, c[i], i);
+		insert_val(prevNegBST, c[i], i);
+	}
+
+	pfree(prevPosBST);
+	pfree(prevNegBST);
+
+	// for(int i = 0; i < num_tuples+2; i++) 
+	// {
+	// 	elog(INFO, "fwdPosPtr[%d] = %d, fwdNegPtr[%d] = %d, prevPosPtr[%d] = %d, prevNegPtr[%d] = %d\n", i, fwdPosPtr[i], i, fwdNegPtr[i], i, prevPosPtr[i], i, prevNegPtr[i]);
+	// }
+}
+
 int  jp(char **column_headers, char *sourceText, int natts, char *attribute,int curr,int color,char * dir,int *LJP,int* RJP,int * colorarray)
 {
 	if(strcmp(dir,"left")==0)
@@ -4167,6 +4394,22 @@ int size(mystack* stack)
 	}
 	return count;
 }
+
+void update_range(Range* range, int actualStart, int actualEnd, int outputStart, int outputEnd)
+{
+	Range r1 = createRange(actualStart, actualEnd);
+	Range r2 = createRange(outputStart, outputEnd);
+	double similarity = jaccordsimilarity(r1, r2);
+	// elog(INFO, "Update start %d, end %d, similarity %f", outputStart, outputEnd, similarity);
+	if(!range->valid || similarity > range->similarity)
+	{
+		range->start = outputStart;
+		range->end = outputEnd;
+		range->valid = true;
+		range->similarity = similarity;
+	}
+}
+
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
 {
 
@@ -4191,6 +4434,19 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 
 	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
 	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+	int w1;
+	if (item0->into_val == NULL) {
+		w1 = 1;
+	} else {
+		w1 = ((A_Const*)item0->into_val)->val.ival.ival;
+	}
+
+	int w2;
+	if (item1->into_val == NULL) {
+		w2 = -1;
+	} else {
+		w2 = -((A_Const*)item1->into_val)->val.ival.ival;
+	}
 
 	char* feature1 = item0->attr_name;
 	char* feature2 = item1->attr_name;
@@ -4199,9 +4455,9 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature1) == 0) {
-				cumulative += 1;
+				cumulative += w1;
 			} else if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
-				cumulative -= 1;
+				cumulative += w2;
 			}
 			c[i] = cumulative;
 		}	
@@ -4229,139 +4485,96 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 		elog(INFO,"Disparity is within the epsilon range");
 		return createRange(start,end);
 	}
-	double best_similarity = 0;
-	Range fair_range = createRange(start,end);
-	int disparitydifference =abs(disparity) - epsilon;
-	int jumps = disparitydifference;
-	mystack startleft, startright, endleft, endright;
-	initializestack(&startleft, "startleft");
-	initializestack(&startright, "startright");
-	initializestack(&endleft, "endleft");
-	initializestack(&endright, "endright");
-	int excesscolor = disparity > 0 ? 1 : -1;
-	pushstack(&startleft, start);
-	pushstack(&startright, start);
-	pushstack(&endleft, end);
-	pushstack(&endright, end);
-	while(jumps)
-	{
-		int topindex = top(&startright);
-		if(color[topindex] == excesscolor)
-		{
-			pushstack(&startright, topindex+1);
-		}
-		else 
-		{
-			pushstack(&startright,RJP[topindex-1]+1);
-		}
-		--jumps;
-	}
-	jumps = disparitydifference;
-	while(jumps)
-	{
-		int sr = top(&startright);
-		int el = top(&endleft);
-		int er = top(&endright);
-		Range sr_el = createRange(sr,el);
-		double similarity_sr_el = jaccordsimilarity(createRange(start,end), sr_el);
-		if(similarity_sr_el > best_similarity)
-		{
-			best_similarity = similarity_sr_el;
-			fair_range = sr_el;			
-		}
-		if(size(&endright)+size(&startright)==disparitydifference+2)
-		{
-			Range sr_er = createRange(sr,er);
-			double similarity_sr_er = jaccordsimilarity(createRange(start,end), sr_er);
-			if(similarity_sr_er > best_similarity)
-			{
-				best_similarity = similarity_sr_er;
-				fair_range = sr_er;
-			}
-		}
-		if(er<num_tuples +1)
-		{
-			if(color[er+1] != excesscolor)
-			{
-				pushstack(&endright,er+1);
-			}
-			else if(RJP[er]!=-1)
-			{
-				pushstack(&endright,RJP[er]);
-			}
-		}
-		if(color[el]==excesscolor)
-		{
-			pushstack(&endleft,el-1);
-		}
-		else
-		{
-			pushstack(&endleft,LJP[el+1]-1);
-		}
-		pop(&startright);
-		--jumps;
-	}
-	jumps = disparitydifference+1;
-	while(jumps)
-	{
-		int sl = top(&startleft);
-		int el = top(&endleft);
-		int er = top(&endright);
-		Range sl_el = createRange(sl,el);
-		double similarity_sl_el = jaccordsimilarity(createRange(start,end), sl_el);
-		if(similarity_sl_el > best_similarity)
-		{
-			best_similarity = similarity_sl_el;
-			fair_range = sl_el;
-		}
-		dlist_iter iter;
-		dlist_foreach(iter, &startleft.header)
-		{
-			mynode *node = dlist_container(mynode, node, iter.cur);
-		}
+	Range result = createRange(0,0);
+	result.valid = false;
+	result.similarity = 0;
 
-		dlist_foreach(iter, &endleft.header)
+	int disparityRight = disparity;
+	int left = start, right = end;
+	mystack rightExpansion;
+	initializestack(&rightExpansion, "rightExpansion");
+	pushstack(&rightExpansion, right);
+	while(abs(disparityRight) > epsilon)
+	{
+		int stackEnd = top(&rightExpansion);
+		int rightEnd;
+		if(disparityRight < 0) rightEnd = fwdPosPtr[stackEnd];
+		else rightEnd = fwdNegPtr[stackEnd];
+		if(rightEnd == -1) break;
+		disparityRight = c[rightEnd] - c[left-1];
+		pushstack(&rightExpansion, rightEnd);
+	}
+	if(abs(disparityRight) <= epsilon) update_range(&result, left, right, left, top(&rightExpansion));
+
+	mystack leftExpansion, leftShrink;
+	initializestack(&leftExpansion, "leftExpansion");
+	initializestack(&leftShrink, "leftShrink");
+	pushstack(&leftExpansion, left);
+	pushstack(&leftShrink, left);
+	bool leftExpansionFail = false, leftShrinkFail = false;
+	while(size(&rightExpansion) > 0)
+	{
+		int newDisparity = c[top(&rightExpansion)] - c[top(&leftExpansion)-1];
+		while(abs(newDisparity) > epsilon)
 		{
-			mynode *node = dlist_container(mynode, node, iter.cur);
-		}
-		if(size(&endright)+size(&startleft)==disparitydifference+2)
-		{
-			Range sl_er = createRange(sl,er);
-			double similarity_sl_er = jaccordsimilarity(createRange(start,end), sl_er);
-			if(similarity_sl_er > best_similarity)
-			{
-				best_similarity = similarity_sl_er;
-				fair_range = sl_er;
-			}
-			pop(&endright);
-		}
-		pop(&endleft);
-		if(sl>1)
-		{
-			if(color[sl-1] != excesscolor)
-			{
-				pushstack(&startleft,sl-1);
-			}
-			else if(LJP[sl]!=-1)
-			{
-				pushstack(&startleft,LJP[sl]);
-			}
-			else
-			{
+			int newLeftEnd;
+			if(newDisparity > 0) newLeftEnd = prevNegPtr[top(&leftExpansion)];
+			else newLeftEnd = prevPosPtr[top(&leftExpansion)];
+			if(newLeftEnd == -1) {
+				leftExpansionFail = true;
 				break;
 			}
+			pushstack(&leftExpansion, newLeftEnd);
+			newDisparity = c[top(&rightExpansion)] - c[top(&leftExpansion)-1];
 		}
-		else
-		{
-			break;
-		}
-		--jumps;
-	}
-	elog(INFO,"Best similarity: %.2f",best_similarity);
-	
-    free(c);
+		if(size(&leftExpansion) > 1 && !leftExpansionFail) update_range(&result, left, right, top(&leftExpansion), top(&rightExpansion));
 
-	return fair_range;
+		newDisparity = c[top(&rightExpansion)] - c[top(&leftShrink)-1];
+
+		while(abs(newDisparity) > epsilon)
+		{
+			int newLeftEnd;
+			if(newDisparity > 0) newLeftEnd = fwdPosPtr[top(&leftShrink) - 1];
+			else newLeftEnd = fwdNegPtr[top(&leftShrink) - 1];
+			if(newLeftEnd == -1) {
+				leftShrinkFail = true;
+				break;
+			}
+			pushstack(&leftShrink, newLeftEnd + 1);
+			newDisparity = c[top(&rightExpansion)] - c[top(&leftShrink)-1];
+		}
+
+		if(size(&leftShrink) > 1 && !leftShrinkFail) update_range(&result, left, right, top(&leftShrink), top(&rightExpansion));
+
+		pop(&rightExpansion);
+	}
+
+	mystack rightShrink;
+	initializestack(&rightShrink, "rightShrink");
+	pushstack(&rightShrink, right);
+	disparityRight = c[top(&rightShrink)] - c[left-1];
+	while(abs(disparityRight) > epsilon)
+	{
+		if(abs(c[top(&rightShrink)] - c[top(&leftShrink)-1]) <= epsilon){
+			update_range(&result, left, right, top(&leftShrink), top(&rightShrink));
+			pop(&leftShrink);
+		}
+
+		if(abs(c[top(&rightShrink)] - c[top(&leftExpansion)-1]) <= epsilon){
+			update_range(&result, left, right, top(&leftExpansion), top(&rightShrink));
+			pop(&leftExpansion);
+		}
+
+		int newRightEnd;
+		if(disparityRight > 0) newRightEnd = prevPosPtr[top(&rightShrink) + 1] - 1;
+		else newRightEnd = prevNegPtr[top(&rightShrink) + 1] - 1;
+
+		if(newRightEnd == -1) break;
+		pushstack(&rightShrink, newRightEnd);
+		disparityRight = c[top(&rightShrink)] - c[left-1];
+	}
+	elog(INFO, "result start: %d, end: %d, similarity = %f", result.start, result.end, result.similarity);
+	return result;
 }
 
 

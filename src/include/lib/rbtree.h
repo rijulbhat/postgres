@@ -76,6 +76,8 @@ extern void rbt_delete(RBTree *rbt, RBTNode *node);
 
 extern void rbt_begin_iterate(RBTree *rbt, RBTOrderControl ctrl,
 							  RBTreeIterator *iter);
+extern void rbt_begin_iterate_from(RBTree *rbt, RBTOrderControl ctrl,
+							  RBTreeIterator *iter, RBTNode *start);
 extern RBTNode *rbt_iterate(RBTreeIterator *iter);
 
 #endif							/* RBTREE_H */
