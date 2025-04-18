@@ -77,6 +77,7 @@ OBJS = \
 	nodeWorktablescan.o \
 	spi.o \
 	tqueue.o \
-	tstoreReceiver.o
+	tstoreReceiver.o \
+	fairness.o
 
 include $(top_srcdir)/src/backend/common.mk
