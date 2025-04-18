@@ -125,6 +125,7 @@ Range createRange(int st, int e) {
 	range.end = e;
 	return range;
 }
+MemoryContext weightedPointersContext = NULL;
 bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb, double *epsilon, char *column_name);
 bool fairness_check_naive(char **column_headers, CharPtrVector* vec, SubjectToStmt* subjectToStmt, float lower_bound, float upper_bound, int col_index);
 bool fairness_check(SubjectToStmt* subjectToStmt, StringVector* color_vector, int **prefixsum, int start, int end);
@@ -818,8 +819,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 		
 		if(!fair){
 			if(list_length(subjectToStmt->attr_list) == 2 && is_binary_attr(vec, get_attribute_index(column_header->data, vec->natts, subjectToStmt->attr))){
-
-				elog(INFO, "Binary attribute");
+				// elog(INFO, "Binary attribute");
 				RBTree *rbt;
 
 				AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
@@ -837,6 +837,15 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				} else {
 					w2 = ((A_Const*)item1->into_val)->val.ival.ival;
 				}
+				
+				bool switch_ptrs = false;
+
+				if (strcmp(item0->attr_name, item1->attr_name) > 0) {
+					int temp = w1;
+					w1 = w2;
+					w2 = temp;
+					switch_ptrs = true;
+				}
 
 				if(!built_pointers_vec->data[table_index] || attr_index == -1){
 
@@ -852,8 +861,19 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 					weighted_pointers_node->prevPosPtr = prevPosPtr;
 
 					built_pointers_vec->data[table_index] = true;
-					// elog(INFO, "Built pointers");		
-					elog(INFO, "Building RBTree");
+					// elog(INFO, "Built pointers");	
+					if (weightedPointersContext == NULL) {
+						weightedPointersContext = AllocSetContextCreate(
+							TopMemoryContext,         // Use this for global/session-lifetime allocations
+							"MySessionMemoryContext",
+							ALLOCSET_DEFAULT_SIZES
+						);
+					}
+					
+					MemoryContext oldContext = MemoryContextSwitchTo(weightedPointersContext);
+
+					// Perform operations within the new memory context
+
 					rbt = rbt_create(sizeof(WeightedPointersRBNode),   /* Node size */
 					weighted_pointers_rbtree_comparator, /* Comparator */
 					weighted_pointers_rbtree_combiner,   /* Combiner */
@@ -861,6 +881,8 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 					weighted_pointers_rbtree_freefunc,   /* Free function */
 					NULL);
 					
+					// elog(INFO, "Created RBTree");
+
 					bool newinsert;
 					rbt_insert(rbt, (RBTNode *) weighted_pointers_node, &newinsert);
 
@@ -879,23 +901,21 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 						// elog(INFO, "pushed attribute: %s", attribute);
 					}
 					// elog(INFO, "Pushed attribute: %s", attribute);
+					MemoryContextSwitchTo(oldContext);
 				}
 				else{
 					// elog(INFO, "Using existing pointers");
 					// LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
 					// RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
+					
 					rbt = (RBTree *)ptr_vector_get(table_weighted_pointers->data[table_index], attr_index);
 					
 					WeightedPointersRBNode* node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
 					node->weight1 = w1;
 					node->weight2 = w2;
-
-					elog(INFO, "REACHED HERE1");
 					weighted_pointers_node = (WeightedPointersRBNode *) rbt_find(rbt, (RBTNode *) node);
-					elog(INFO, "REACHED HERE2");
 
 					if (weighted_pointers_node == NULL) {
-						elog(INFO, "Inserting weights %d, %d", w1, w2);
 						buildingpointers_w(column_header->data, attribute, vec->natts, subjectToStmt);
 					
 						weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
@@ -906,22 +926,27 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 						weighted_pointers_node->prevNegPtr = prevNegPtr;
 						weighted_pointers_node->prevPosPtr = prevPosPtr;
 
+						// elog(INFO, "Inserted new node");
 						bool newinsert;
 						rbt_insert(rbt, (RBTNode *) weighted_pointers_node, &newinsert);
 
 					}
 					else{
-						elog(INFO, "Found weights %d, %d", weighted_pointers_node->weight1, weighted_pointers_node->weight2);
+						// elog(INFO, "Found existing node");
 					}
 
-					if(weighted_pointers_node->weight1 != w1 || weighted_pointers_node->weight2 != w2){
-						elog(ERROR, "Weights do not match");
+					if (switch_ptrs) {
+						fwdNegPtr = weighted_pointers_node->fwdPosPtr;
+						fwdPosPtr = weighted_pointers_node->fwdNegPtr;
+						prevNegPtr = weighted_pointers_node->prevPosPtr;
+						prevPosPtr = weighted_pointers_node->prevNegPtr;
 					}
-
-					fwdPosPtr = weighted_pointers_node->fwdPosPtr;
-					fwdNegPtr = weighted_pointers_node->fwdNegPtr;
-					prevPosPtr = weighted_pointers_node->prevPosPtr;
-					prevNegPtr = weighted_pointers_node->prevNegPtr;
+					else{					
+						fwdPosPtr = weighted_pointers_node->fwdPosPtr;
+						fwdNegPtr = weighted_pointers_node->fwdNegPtr;
+						prevPosPtr = weighted_pointers_node->prevPosPtr;
+						prevNegPtr = weighted_pointers_node->prevNegPtr;
+					}
 				}
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
@@ -946,7 +971,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 				
 			}
 			else{
-				elog(INFO, "Non-binary attribute");
+				// elog(INFO, "Non-binary attribute");
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
@@ -4225,7 +4250,7 @@ static int weighted_pointers_rbtree_comparator(const RBTNode *a, const RBTNode *
 
 	if (nodeA->weight1 < nodeB->weight1 || (nodeA->weight1 == nodeB->weight1 && nodeA->weight2 < nodeB->weight2))
 		return -1;
-	else if (nodeA->weight1 > nodeB->weight2 || (nodeA->weight1 == nodeB->weight1 && nodeA->weight2 > nodeB->weight2))
+	else if (nodeA->weight1 > nodeB->weight1 || (nodeA->weight1 == nodeB->weight1 && nodeA->weight2 > nodeB->weight2))
 		return 1;
 	return 0;
 }
