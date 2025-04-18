@@ -28,6 +28,22 @@ typedef struct RBTNode
 	struct RBTNode *parent;		/* parent, or NULL (not RBTNIL!) if none */
 } RBTNode;
 
+typedef struct IntRBNode
+{
+	RBTNode rbt_node;  /* Base RBTNode (must be first) */
+	int key;           /* Integer key */
+	int *values;         /* Integer value */
+	int index;
+	int start;
+} IntRBNode;
+
+typedef struct WeightedPointersRBNode
+{
+	RBTNode rbt_node;  /* Base RBTNode (must be first) */
+	int weight1, weight2;         
+	int *fwdPosPtr, *fwdNegPtr, *prevPosPtr, *prevNegPtr;
+} WeightedPointersRBNode;
+
 /* Opaque struct representing a whole tree */
 typedef struct RBTree RBTree;
 
@@ -74,8 +90,9 @@ extern RBTNode *rbt_leftmost(RBTree *rbt);
 extern RBTNode *rbt_insert(RBTree *rbt, const RBTNode *data, bool *isNew);
 extern void rbt_delete(RBTree *rbt, RBTNode *node);
 
-extern void rbt_begin_iterate(RBTree *rbt, RBTOrderControl ctrl,
-							  RBTreeIterator *iter);
+extern void rbt_begin_iterate(RBTree *rbt, RBTOrderControl ctrl, RBTreeIterator *iter);
+extern void rbt_begin_iterate_from(RBTree *rbt, RBTOrderControl ctrl, RBTreeIterator *iter, RBTNode *start);
 extern RBTNode *rbt_iterate(RBTreeIterator *iter);
+
 
 #endif							/* RBTREE_H */

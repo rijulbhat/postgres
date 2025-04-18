@@ -145,11 +145,15 @@ RBTNode *
 rbt_find(RBTree *rbt, const RBTNode *data)
 {
 	RBTNode    *node = rbt->root;
+	
+	elog(INFO, "started searching");
+	// elog(INFO, "%d, %d", ((WeightedPointersRBNode *)node)->weight1, ((WeightedPointersRBNode *)node)->weight2);
 
 	while (node != RBTNIL)
 	{
+		elog(INFO, "hi");
 		int			cmp = rbt->comparator(data, node, rbt->arg);
-
+		elog(INFO, "bye");
 		if (cmp == 0)
 			return node;
 		else if (cmp < 0)
@@ -804,6 +808,27 @@ rbt_begin_iterate(RBTree *rbt, RBTOrderControl ctrl, RBTreeIterator *iter)
 	/* Common initialization for all traversal orders */
 	iter->rbt = rbt;
 	iter->last_visited = NULL;
+	iter->is_over = (rbt->root == RBTNIL);
+
+	switch (ctrl)
+	{
+		case LeftRightWalk:		/* visit left, then self, then right */
+			iter->iterate = rbt_left_right_iterator;
+			break;
+		case RightLeftWalk:		/* visit right, then self, then left */
+			iter->iterate = rbt_right_left_iterator;
+			break;
+		default:
+			elog(ERROR, "unrecognized rbtree iteration order: %d", ctrl);
+	}
+}
+
+void
+rbt_begin_iterate_from(RBTree *rbt, RBTOrderControl ctrl, RBTreeIterator *iter, RBTNode *start)
+{
+	/* Common initialization for all traversal orders */
+	iter->rbt = rbt;
+	iter->last_visited = start;
 	iter->is_over = (rbt->root == RBTNIL);
 
 	switch (ctrl)
