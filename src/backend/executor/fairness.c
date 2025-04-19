@@ -49,28 +49,27 @@ int size(mystack* stack);
 bool is_scan_node(Node *node);
 bool is_binary_attr(CharPtrVector* vec, int index);
 
-int *RJP, *LJP;
-WeightedPointersRBNode *weighted_pointers_node;
-int *fwdPosPtr, *fwdNegPtr, *prevPosPtr, *prevNegPtr;
-char ***outputArray;
-BoolVector *reset_outputArrays_vec;
-BoolVector *built_pointers_vec;
-PtrVector *table_pointers;
-PtrVector *table_attributes;
-PtrVector *table_LJP;
-PtrVector *table_RJP;
-PtrVector *table_weighted_pointers;
-PtrVector *table_prefix_sums;
-PtrVector *table_distinct_colors;
-StringVector *tables;
+static int *RJP, *LJP;
+static WeightedPointersRBNode *weighted_pointers_node;
+static int *fwdPosPtr, *fwdNegPtr, *prevPosPtr, *prevNegPtr;
+static char ***outputArray;
+static BoolVector *reset_outputArrays_vec;
+static BoolVector *built_pointers_vec;
+static PtrVector *table_pointers;
+static PtrVector *table_attributes;
+static PtrVector *table_LJP;
+static PtrVector *table_RJP;
+static PtrVector *table_weighted_pointers;
+static PtrVector *table_prefix_sums;
+static PtrVector *table_distinct_colors;
+static StringVector *tables;
 // PtrVector *pointers;
-MemoryContext weightedPointersContext = NULL;
-bool reset_table = true;
-int num_tuples = 0;
-int MAX_ATTRS = 0;
-int sort_attr_index = 0;
-int color_index = 0;
-
+static MemoryContext weightedPointersContext = NULL;
+static bool reset_table = true;
+static int num_tuples = 0;
+static int MAX_ATTRS = 0;
+static int sort_attr_index = 0;
+static int color_index = 0;
 
 
 void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToStmt* subjectToStmt){
@@ -2146,18 +2145,18 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				fwdPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			node = rbt_iterate(iter);
+			node = (IntRBNode*) rbt_iterate(iter);
 		}
 		node = (IntRBNode *) palloc(sizeof(IntRBNode));
 		node->key = c[i];
-		node = rbt_find_great(fwdNegBST, node, 0);
-		rbt_begin_iterate_from(fwdNegBST, LeftRightWalk, iter, node);
+		node = (IntRBNode*) rbt_find_great(fwdNegBST, (RBTNode*) node, 0);
+		rbt_begin_iterate_from(fwdNegBST, LeftRightWalk, iter, (RBTNode*) node);
 		while (node) {
 			for (int j = node->start; j < node->index; j++) {
 				fwdNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			node = rbt_iterate(iter);
+			node = (IntRBNode*) rbt_iterate(iter);
 		}
 		insert_val(fwdPosBST, c[i], i);
 		insert_val(fwdNegBST, c[i], i);
@@ -2210,18 +2209,18 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				prevPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			node = rbt_iterate(iter);
+			node = (IntRBNode*) rbt_iterate(iter);
 		}
 		node = (IntRBNode *) palloc(sizeof(IntRBNode));
 		node->key = c[i];
-		node = rbt_find_great(prevNegBST, node, 0);
-		rbt_begin_iterate_from(prevNegBST, LeftRightWalk, iter, node);
+		node = (IntRBNode*) rbt_find_great(prevNegBST, (RBTNode*) node, 0);
+		rbt_begin_iterate_from(prevNegBST, LeftRightWalk, iter, (RBTNode*) node);
 		while (node) {
 			for (int j = node->start; j < node->index; j++) {
 				prevNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			node = rbt_iterate(iter);
+			node = (IntRBNode*) rbt_iterate(iter);
 		}
 		
 		insert_val(prevPosBST, c[i], i);
