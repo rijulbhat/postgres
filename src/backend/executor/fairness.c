@@ -405,7 +405,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
                     match_colors = true;
                 }
             }
-			if(list_length(subjectToStmt->attr_list) == 2 && color_vector->size == 2){
+			if(match_colors){
 				
 				RBTree *rbt;
 
