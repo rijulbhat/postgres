@@ -57,7 +57,7 @@ char *string_vector_get(StringVector *vec, size_t index) {
 }
 
 // Find the index of a `char*` in the vector, or -1 if not found
-int string_vector_find(StringVector *vec, char *attribute) {
+int string_vector_find(StringVector *vec, const char *attribute) {
     for (size_t i = 0; i < vec->size; i++) {
         if (strcmp(vec->data[i], attribute) == 0) {
             return i;  // Found, return index

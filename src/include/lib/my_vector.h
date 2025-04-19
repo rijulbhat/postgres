@@ -29,7 +29,7 @@ void string_vector_init(StringVector *vec);
 void string_vector_push(StringVector *vec, char *elem);
 char *string_vector_get(StringVector *vec, size_t index);
 void string_vector_free(StringVector *vec);
-int string_vector_find(StringVector *vec, char *attribute);
+int string_vector_find(StringVector *vec, const char* attribute);
 typedef struct {
     void **data;    // Array of `char*` elements
     size_t size;     // Number of elements

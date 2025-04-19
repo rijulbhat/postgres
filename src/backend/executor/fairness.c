@@ -25,7 +25,7 @@ void initializestack(mystack* stack, char* name);
 double jaccordsimilarity(Range r1, Range r2);
 void pushstack(mystack* stack, int value);
 void pop(mystack* stack);
-char *print_table_names_from_query(QueryDesc *queryDesc);
+const char* print_table_names_from_query(QueryDesc *queryDesc);
 Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
@@ -74,6 +74,9 @@ static int color_index = 0;
 
 void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToStmt* subjectToStmt){
     int epsilon;
+	const char* table;
+	int table_index;
+
     if(reset_table){
 		reset_table = false;
 		tables = (StringVector *) malloc(sizeof(StringVector));
@@ -98,16 +101,13 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		ptr_vector_init(table_RJP);
 	}
 
-	char *table = print_table_names_from_query(queryDesc);
-	int table_index = -1;
+	table = print_table_names_from_query(queryDesc);
+	table_index = -1;
 	
 	if(table){
 		table_index = string_vector_find(tables, table);
 
 		if (table_index == -1){
-			string_vector_push(tables, pstrdup(table));
-			bool_vector_push(built_pointers_vec, false);
-			bool_vector_push(reset_outputArrays_vec, true);
 			PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 			StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
 			PtrVector *new_table_prefix_sums = (PtrVector *) malloc(sizeof(PtrVector));
@@ -115,6 +115,10 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 			PtrVector *new_table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
 			PtrVector *new_table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
 			PtrVector *new_table_weighted_pointers = (PtrVector *) malloc(sizeof(PtrVector));
+
+			string_vector_push(tables, pstrdup(table));
+			bool_vector_push(built_pointers_vec, false);
+			bool_vector_push(reset_outputArrays_vec, true);
 
 			ptr_vector_init(new_table_pointers);
 			string_vector_init(new_table_attributes);
@@ -147,6 +151,22 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 
 	if (queryDesc->operation == CMD_SELECT && subjectToStmt != NULL){
 
+		Oid relid;
+		PlanState *ps;
+		ScanState *scanstate;
+		Scan *scan;
+		List *qualList;
+		ListCell *lc;
+		int index, n_bounds, l_index, r_index, attr_index;
+		char* attribute;
+		float bounds[2];
+		Index scanrelid;
+		CharPtrVector* vec;
+		int **prefix_sums;
+		StringVector *color_vector;
+		Range output;
+		bool fair;
+
 		if(reset_outputArrays_vec->data[table_index]){
 			table_pointers->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
 			table_attributes->data[table_index] = (StringVector *) malloc(sizeof(StringVector));
@@ -167,29 +187,11 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 			reset_outputArrays_vec->data[table_index] = false;
 		}
 
-		// }
-		// else
-		// {
-		// 	elog(INFO, "Top-level planstate is not a scan node (type: %d)", nodeTag(ps));
-		// }
-		Plan *plan;
-		plan = queryDesc->planstate->plan;
-		Oid relid = InvalidOid;
-
-		PlanState *ps = queryDesc->planstate;
-
-		// if (is_scan_node((Node *) ps))  // use the is_scan_node helper from before
-		// {
-		ScanState *scanstate = (ScanState *) ps;
-		Scan *scan = (Scan *) scanstate->ps.plan;
-
-		List *qualList;
+		relid = InvalidOid;
+		ps = queryDesc->planstate;
+		scanstate = (ScanState *) ps;
+		scan = (Scan *) scanstate->ps.plan;
 		qualList = (List *) scan->plan.qual;
-		ListCell *lc;
-		int index, n_bounds, l_index, r_index, attr_index;
-		char* attribute;
-		float bounds[2];
-		
 		n_bounds = 0;
 		
 		if (list_length(subjectToStmt->attr_list) <= 1) {
@@ -238,8 +240,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 			}
 		}
 	
-		Index scanrelid = scan->scanrelid;
-		CharPtrVector* vec;
+		scanrelid = scan->scanrelid;
 		vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
 		if (scanrelid > 0)
 		{
@@ -262,10 +263,10 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 		num_tuples = vec -> size;
 		MAX_ATTRS = column_header->natts;
-		int **prefix_sums;
-		StringVector *color_vector;
 		
 		if(!built_pointers_vec->data[table_index] || attr_index == -1){
+			int color_count = 0;
+			char** colors;
 			
 			outputArray = (char ***)malloc(vec->size * sizeof(char **));
 						
@@ -279,8 +280,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 
 			merge_sort(0, num_tuples - 1, sort_attr_index);
 
-			int color_count = 0;
-			char **colors = compute_distinct_colors(num_tuples, color_index, &color_count);
+			colors = compute_distinct_colors(num_tuples, color_index, &color_count);
 
 			color_vector = (StringVector *) malloc(sizeof(StringVector));
 
@@ -311,11 +311,8 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 
 		l_index = get_upper_value_index(index, bounds[0]) + 1;
 		r_index = get_lower_value_index(index, bounds[1]) + 1;
-
-		Range output;
 		
-		
-		bool fair = fairness_check(subjectToStmt, color_vector, prefix_sums, l_index-1, r_index-1); // 0-indexing
+		fair = fairness_check(subjectToStmt, color_vector, prefix_sums, l_index-1, r_index-1); // 0-indexing
 
 		if(fair){
 			elog(INFO, "FAIR QUERY OUTPUT");
@@ -331,21 +328,20 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 
 				AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
 				AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
-				int w1;
+				int w1, w2;
+				bool switch_ptrs = false;
+
 				if (item0->into_val == NULL) {
 					w1 = 1;
 				} else {
 					w1 = ((A_Const*)item0->into_val)->val.ival.ival;
 				}
 			
-				int w2;
 				if (item1->into_val == NULL) {
 					w2 = 1;
 				} else {
 					w2 = ((A_Const*)item1->into_val)->val.ival.ival;
 				}
-				
-				bool switch_ptrs = false;
 
 				if (strcmp(item0->attr_name, item1->attr_name) > 0) {
 					int temp = w1;
@@ -356,7 +352,9 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 
 				if(!built_pointers_vec->data[table_index] || attr_index == -1){
 
-				
+					MemoryContext oldContext;
+					bool newinsert;
+
 					buildingpointers_w(column_header->data, attribute, vec->natts, subjectToStmt);
 					
 					weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
@@ -377,7 +375,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 						);
 					}
 					
-					MemoryContext oldContext = MemoryContextSwitchTo(weightedPointersContext);
+					oldContext = MemoryContextSwitchTo(weightedPointersContext);
 
 					// Perform operations within the new memory context
 
@@ -390,7 +388,6 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 					
 					// elog(INFO, "Created RBTree");
 
-					bool newinsert;
 					rbt_insert(rbt, (RBTNode *) weighted_pointers_node, &newinsert);
 
 					if (!newinsert) {
@@ -415,14 +412,16 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 					// LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
 					// RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
 					
+					WeightedPointersRBNode* node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
 					rbt = (RBTree *)ptr_vector_get(table_weighted_pointers->data[table_index], attr_index);
 					
-					WeightedPointersRBNode* node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
 					node->weight1 = w1;
 					node->weight2 = w2;
 					weighted_pointers_node = (WeightedPointersRBNode *) rbt_find(rbt, (RBTNode *) node);
 
 					if (weighted_pointers_node == NULL) {
+						bool newinsert;
+
 						buildingpointers_w(column_header->data, attribute, vec->natts, subjectToStmt);
 					
 						weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
@@ -434,7 +433,6 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 						weighted_pointers_node->prevPosPtr = prevPosPtr;
 
 						// elog(INFO, "Inserted new node");
-						bool newinsert;
 						rbt_insert(rbt, (RBTNode *) weighted_pointers_node, &newinsert);
 
 					}
@@ -479,14 +477,16 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 			}
 			else{
 				// elog(INFO, "Non-binary attribute");
+				Range originalrange;
+				Range recursivebfsoutput;
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 				output = multicolor_getrange(vec, column_header->data, attribute, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				//%jalu writing this, do not hit
-				Range originalrange = createRange(l_index, r_index);
-				Range recursivebfsoutput = recursivebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
+				originalrange = createRange(l_index, r_index);
+				recursivebfsoutput = recursivebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
 				elog(INFO, "BFSRecursive Fair range: [%d, %d]", recursivebfsoutput.start, recursivebfsoutput.end);
 				//%jalu ending this, do not blame 
 				
@@ -545,10 +545,15 @@ Range createRange(int st, int e) {
 bool fairness_check_naive(char **column_headers, CharPtrVector* vec,  SubjectToStmt* subjectToStmt, float lower_bound, float upper_bound, int col_index)
 {
 	int num_colors = list_length(subjectToStmt->attr_list);
-
-	int Wr, Wb, epsilon;
-
+	int epsilon;
 	int *weights = (int *) palloc(num_colors * sizeof(int));
+	int natts = vec->natts;
+	int idx;
+	char** C;
+	char *column_name;
+	int *count_features;
+	bool fair = true;
+	
 
 	for (int i = 0; i < num_colors; i++)
 	{
@@ -561,10 +566,7 @@ bool fairness_check_naive(char **column_headers, CharPtrVector* vec,  SubjectToS
 		}
 	}
 
-	int natts = vec->natts;
-	int idx;
-
-	char **C = (char **) palloc(num_colors * sizeof(char *));
+	C = (char **) palloc(num_colors * sizeof(char *));
 	
 	for (int i = 0; i < num_colors; i++)
 	{
@@ -572,11 +574,11 @@ bool fairness_check_naive(char **column_headers, CharPtrVector* vec,  SubjectToS
 		C[i] = item->attr_name;
 	}
 
-	char *column_name = subjectToStmt->attr;
+	column_name = subjectToStmt->attr;
 	epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 	idx = get_attribute_index(column_headers, natts, column_name);
 
-	int *count_features = (int *) palloc(num_colors * sizeof(int));
+	count_features = (int *) palloc(num_colors * sizeof(int));
 	for (int i = 0; i < num_colors; i++)
 	{
 		count_features[i] = 0;
@@ -597,8 +599,7 @@ bool fairness_check_naive(char **column_headers, CharPtrVector* vec,  SubjectToS
 		}
 	}
 
-	bool fair = true;
-
+	fair = true;
 	for (int i = 0; i < num_colors; i++)
 	{
 		for (int j = 0; j < num_colors; j++)
@@ -613,14 +614,8 @@ bool fairness_check_naive(char **column_headers, CharPtrVector* vec,  SubjectToS
 		}
 	}
 	
-	if(fair)
-	{
-		elog(INFO, "FAIR QUERY OUTPUT");
-	}
-	else
-	{
-		elog(INFO, "UNFAIR QUERY OUTPUT");
-	}
+	if(fair){ elog(INFO, "FAIR QUERY OUTPUT"); }
+	else{ elog(INFO, "UNFAIR QUERY OUTPUT"); }
 
 	return fair;
 }
@@ -628,10 +623,10 @@ bool fairness_check_naive(char **column_headers, CharPtrVector* vec,  SubjectToS
 bool fairness_check(SubjectToStmt* subjectToStmt, StringVector* color_vector, int **prefixsum, int start, int end)
 {
 	int num_colors = list_length(subjectToStmt->attr_list);
-
 	int epsilon;
-
 	int *weights = (int *) palloc(num_colors * sizeof(int));
+	char **C;
+	bool fair;
 
 	for (int i = 0; i < num_colors; i++)
 	{
@@ -644,19 +639,16 @@ bool fairness_check(SubjectToStmt* subjectToStmt, StringVector* color_vector, in
 		}
 	}
 
-	char **C = (char **) palloc(num_colors * sizeof(char *));
-	
+	C = (char **) palloc(num_colors * sizeof(char *));
 	for (int i = 0; i < num_colors; i++)
 	{
 		AttrWithInto *item = (AttrWithInto *) list_nth(subjectToStmt->attr_list, i);
 		C[i] = item->attr_name;
 	}
 
-	char *column_name = subjectToStmt->attr;
 	epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
 
-	bool fair = true;
-
+	fair = true;
 	for (int i = 0; i < num_colors; i++)
 	{
 		int color_idx1;
@@ -702,8 +694,13 @@ bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb,
 {
 
 	const char *ptr = input;
-
 	const char *start = strstr(ptr, "subject");
+	char *tempPtr;
+	char subject[150];
+	char *end;
+	const char *p = input;
+	const char *pt = input;
+
 	if (!start)
 	{
 		return false;
@@ -715,15 +712,14 @@ bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb,
 		start++;
 	}
 
-	char *tempPtr = column_name;
+	tempPtr = column_name;
 	while (*start && *start != '|')
 	{
 		*tempPtr++ = *start++;
 	}
 	*tempPtr = '\0';
-	char subject[150];
+
 	snprintf(subject, sizeof(subject), "subject %s|", column_name);
-	char *end;
 
 	end = column_name + strlen(column_name) - 1;
 	while (end > column_name && isspace((unsigned char)*end))
@@ -762,7 +758,7 @@ bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb,
 		}
 		*Cr = '\0';
 	}
-	const char *p = input;
+
 	while (*p && *p != '-')
 		p++;
 	p++; 
@@ -787,7 +783,6 @@ bool parse_string(const char *input, double *Wr, char *Cr, double *Wb, char *Cb,
 		}
 		*Cb = '\0';
 	}
-	const char *pt = input;
 
 	while (*pt && strncmp(pt, "subject", strlen("subject")) != 0)
 		pt++;
@@ -875,26 +870,27 @@ int get_upper_value_index(int index, float value) {
 void merge(int left, int mid, int right, int attr_index) {
     int n1 = mid - left + 1;
     int n2 = right - mid;
-
+	int i, j, k;
     char ***L = (char ***)malloc(n1 * sizeof(char **));
     char ***R = (char ***)malloc(n2 * sizeof(char **));
-    for (int i = 0; i < n1; i++) {
+    
+	for (i = 0; i < n1; i++) {
         L[i] = (char **)malloc(MAX_ATTRS * sizeof(char *));
     }
-    for (int i = 0; i < n2; i++) {
+    for (i = 0; i < n2; i++) {
         R[i] = (char **)malloc(MAX_ATTRS * sizeof(char *));
     }
 
-    for (int i = 0; i < n1; i++)
-        for (int j = 0; j < MAX_ATTRS; j++){
+    for (i = 0; i < n1; i++)
+        for (j = 0; j < MAX_ATTRS; j++){
             L[i][j] = outputArray[left + i][j];
 		}
-    for (int i = 0; i < n2; i++)
-        for (int j = 0; j < MAX_ATTRS; j++){
+    for (i = 0; i < n2; i++)
+        for (j = 0; j < MAX_ATTRS; j++){
             R[i][j] = outputArray[mid + 1 + i][j];
 		}
 
-    int i = 0, j = 0, k = left;
+    i = 0; j = 0; k = left;
     while (i < n1 && j < n2) {
         if (atof(L[i][attr_index]) <= atof(R[j][attr_index])) {
             for (int l = 0; l < MAX_ATTRS; l++)
@@ -908,7 +904,6 @@ void merge(int left, int mid, int right, int attr_index) {
         k++;
     }
 		
-
     while (i < n1) {
         for (int l = 0; l < MAX_ATTRS; l++)
 		outputArray[k][l] = L[i][l];
@@ -923,16 +918,16 @@ void merge(int left, int mid, int right, int attr_index) {
         k++;
     }
 
-    for (int i = 0; i < n1; i++) {
+    for (i = 0; i < n1; i++) {
         free(L[i]);
     }
-    for (int i = 0; i < n2; i++) {
+    for (i = 0; i < n2; i++) {
         free(R[i]);
     }
     free(L);
-    free(R);
-	
+    free(R);	
 }
+
 void merge_sort(int left, int right, int attr_index) {
     if (left < right) {
         int mid = left + (right - left) / 2;
@@ -1003,11 +998,11 @@ typedef struct heapnode
 {
 	struct heapnode *first_child;
 	struct heapnode *next_sibling;
-	struct heap_node *prev_or_parent;
+	struct heapnode *prev_or_parent;
 	Range r;
 	float similarity;
-	
 } heapnode;
+
 int int_rbtree_comparator(const RBTNode *a, const RBTNode *b, void *arg)
 {
 	const IntRBNode *nodeA = (const IntRBNode *) a;
@@ -1019,6 +1014,7 @@ int int_rbtree_comparator(const RBTNode *a, const RBTNode *b, void *arg)
 		return 1;
 	return 0;
 }
+
 int weighted_pointers_rbtree_comparator(const RBTNode *a, const RBTNode *b, void *arg)
 {
 	const WeightedPointersRBNode *nodeA = (const WeightedPointersRBNode *) a;
@@ -1030,7 +1026,8 @@ int weighted_pointers_rbtree_comparator(const RBTNode *a, const RBTNode *b, void
 		return 1;
 	return 0;
 }
-int heapnode_comparator(const pairingheap_node *a,
+
+static int heapnode_comparator(const pairingheap_node *a,
 							   const pairingheap_node *b,
 							   void *arg)
 {
@@ -1044,19 +1041,21 @@ int heapnode_comparator(const pairingheap_node *a,
 	else
 		return 0; // Both have equal similarity
 }
+
 void int_rbtree_combiner(RBTNode *existing, const RBTNode *newdata, void *arg)
 {
-    IntRBNode *existNode = (IntRBNode *) existing;
-    const IntRBNode *newNode = (const IntRBNode *) newdata;
+    // IntRBNode *existNode = (IntRBNode *) existing;
+    // const IntRBNode *newNode = (const IntRBNode *) newdata;
     /* Overwrite existing value */
-   
+	// elog(ERROR, "[INT RBTREE COMBINER]: Same key found.");
 }
+
 void weighted_pointers_rbtree_combiner(RBTNode *existing, const RBTNode *newdata, void *arg)
 {
-	WeightedPointersRBNode *existNode = (WeightedPointersRBNode *) existing;
-	const WeightedPointersRBNode *newNode = (const WeightedPointersRBNode *) newdata;
+	// WeightedPointersRBNode *existNode = (WeightedPointersRBNode *) existing;
+	// const WeightedPointersRBNode *newNode = (const WeightedPointersRBNode *) newdata;
 	/* Overwrite existing value */
-   
+	elog(ERROR, "[WEIGHTED POINTERS RBTREE COMBINER]: Same key found.");
 }
 
 RBTNode *int_rbtree_allocfunc(void *arg)
@@ -1073,6 +1072,7 @@ RBTNode *int_rbtree_allocfunc(void *arg)
 	newNode->start = 0;
     return (RBTNode *) newNode;
 }
+
 RBTNode *weighted_pointers_rbtree_allocfunc(void *arg)
 {
 	WeightedPointersRBNode *newNode = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
@@ -1093,6 +1093,7 @@ void int_rbtree_freefunc(RBTNode *node, void *arg)
 {
     pfree(node);
 }
+
 void weighted_pointers_rbtree_freefunc(RBTNode *node, void *arg)
 {
 	WeightedPointersRBNode *node1 = (WeightedPointersRBNode *) node;
@@ -1105,17 +1106,20 @@ void weighted_pointers_rbtree_freefunc(RBTNode *node, void *arg)
 
 void buildingpointers(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt)
 {
-	elog(INFO, "Preprocessing the Given Query");
 	bool newinsert;
-	int cumulative;
-	
-	int sort_attr_index = get_attribute_index(column_headers, natts, attribute);
-    int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+	int cumulative, attr_index;
+	RBTree *tree;
+	int *c, *color;
+	AttrWithInto *item0, *item1;
+	char *feature1, *feature2;
+
+	elog(INFO, "Preprocessing the Given Query");
+    attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 	// elog(INFO, "Attribute index: %d", attr_index);
 	// count_tuples();
 	// elog(INFO, "UFFF");
 	
-	RBTree* tree = rbt_create(sizeof(IntRBNode),   /* Node size */
+	tree = rbt_create(sizeof(IntRBNode),   /* Node size */
                           int_rbtree_comparator, /* Comparator */
                           int_rbtree_combiner,   /* Combiner */
                           int_rbtree_allocfunc,  /* Allocator */
@@ -1124,8 +1128,8 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
     cumulative = 0;
     RJP = (int *)malloc((num_tuples + 2) * sizeof(int));
 	LJP = (int *)malloc((num_tuples + 2) * sizeof(int));
-    int *c = (int *)malloc((num_tuples + 2) * sizeof(int));
-	int *color = (int *)malloc((num_tuples + 2) * sizeof(int));
+    c = (int *)malloc((num_tuples + 2) * sizeof(int));
+	color = (int *)malloc((num_tuples + 2) * sizeof(int));
 	
     for (int i = 0; i < num_tuples + 2; i++) 
 	{
@@ -1133,11 +1137,11 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 		LJP[i] = -1;
     }
 	// elog(INFO, "AAAAA");
-	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
-	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+	item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
 
-	char* feature1 = item0->attr_name;
-	char* feature2 = item1->attr_name;
+	feature1 = item0->attr_name;
+	feature2 = item1->attr_name;
 	for (int i = 0; i < num_tuples; i++) {
         if (my_strcmp(outputArray[i][attr_index], feature2) == 0) {
 			color[i+1] = -1;
@@ -1152,6 +1156,12 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 	color[num_tuples + 1] = 0;
 	
     for (int i = 0; i < num_tuples+1; i++) {
+		IntRBNode searchNode;
+		RBTNode* foundNode;
+		IntRBNode *foundNode1;
+		IntRBNode *newNode;
+		RBTNode* existing;
+
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -1162,10 +1172,9 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 			c[i] = cumulative;
 		}	
         
-		IntRBNode searchNode;
 		searchNode.key = c[i];
-		RBTNode* foundNode = rbt_find(tree, (RBTNode *) &searchNode);
-		IntRBNode *foundNode1 = (IntRBNode *) foundNode;
+		foundNode = rbt_find(tree, (RBTNode *) &searchNode);
+		foundNode1 = (IntRBNode *) foundNode;
 		if(foundNode)
 		{
 			for (int j = foundNode1->start; j < foundNode1->index; j++) 
@@ -1175,10 +1184,10 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 			}
 			foundNode1->start = foundNode1->index;
 		}
-		IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
+		newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
 		newNode->key = c[i] - color[i+1];
 		
-		RBTNode* existing = rbt_find(tree, (RBTNode *) newNode);
+		existing = rbt_find(tree, (RBTNode *) newNode);
 		if(existing)
 		{
 			IntRBNode *existNode = (IntRBNode *) existing;
@@ -1209,6 +1218,12 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
     //     elog(INFO, "RJP[%d] = %d\n", i, RJP[i]);
     // }
 	for (int i = num_tuples + 1; i >= 1; i--) {
+		IntRBNode searchNode;
+		RBTNode* foundNode; 
+		IntRBNode *foundNode1;
+		IntRBNode *newNode;
+		RBTNode* existing;
+
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -1218,10 +1233,10 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 			}
 			c[i] = cumulative;
 		}	
-		IntRBNode searchNode;
+
 		searchNode.key = c[i];
-		RBTNode* foundNode = rbt_find(tree, (RBTNode *) &searchNode);
-		IntRBNode *foundNode1 = (IntRBNode *) foundNode;
+		foundNode = rbt_find(tree, (RBTNode *) &searchNode);
+		foundNode1 = (IntRBNode *) foundNode;
 		if(foundNode)
 		{
 			for (int j = foundNode1->start; j < foundNode1->index; j++) 
@@ -1230,10 +1245,10 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
 			}
 			foundNode1->start = foundNode1->index;
 		}
-		IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
+		newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
 		newNode->key = c[i] - color[i-1];
 		
-		RBTNode* existing = rbt_find(tree, (RBTNode *) newNode);
+		existing = rbt_find(tree, (RBTNode *) newNode);
 		if(existing)
 		{
 			IntRBNode *existNode = (IntRBNode *) existing;
@@ -1301,6 +1316,7 @@ void pushstack(mystack* stack, int value)
 
 void pop(mystack* stack)
 {
+	mynode* top_node;
 	if (dlist_is_empty(&stack->header))
 	{
 		elog(INFO, "Stack is empty");
@@ -1309,12 +1325,13 @@ void pop(mystack* stack)
 	#define dlist_container(type, membername, ptr) \
 		((type *) ((char *) (ptr) - offsetof(type, membername)))
 
-	mynode* top_node = dlist_container(mynode, node, dlist_pop_head_node(&stack->header));
+	top_node = dlist_container(mynode, node, dlist_pop_head_node(&stack->header));
 	pfree(top_node);
 }
 
 int top(mystack* stack)
 {
+	mynode* top_node;
 	if (dlist_is_empty(&stack->header))
 	{
 		elog(INFO, "Stack is empty");
@@ -1323,7 +1340,7 @@ int top(mystack* stack)
 	#define dlist_container(type, membername, ptr) \
 		((type *) ((char *) (ptr) - offsetof(type, membername)))
 
-	mynode* top_node = dlist_container(mynode, node, dlist_head_node(&stack->header));
+	top_node = dlist_container(mynode, node, dlist_head_node(&stack->header));
 	return top_node->value;
 }
 
@@ -1337,17 +1354,29 @@ int size(mystack* stack)
 	}
 	return count;
 }
+
 Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
 {
+	int attr_index;
+	int *c, *color;
+	int cumulative = 0;
+	AttrWithInto *item0, *item1;
+	char* feature1, *feature2;
+	int disparity;
+	double best_similarity = 0;
+	Range fair_range;
+	int disparitydifference, jumps, excesscolor;
+	mystack startleft, startright, endleft, endright;
+
 	if(start <=0 || end > num_tuples)
 	{
 		elog(ERROR, "Invalid range");
 		return createRange(-1,-1);
 	}
-    int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+    attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 
-	int *c = (int *)malloc((num_tuples+2) * sizeof(int));
-	int *color= (int *)malloc((num_tuples+2) * sizeof(int));
+	c = (int *)malloc((num_tuples+2) * sizeof(int));
+	color= (int *)malloc((num_tuples+2) * sizeof(int));
 	for (int i = 0; i < num_tuples+2; i++) 
 	{
 		c[i] = -1;
@@ -1356,12 +1385,12 @@ Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectT
 
 	c[0]=0;
 	c[num_tuples+1]=0;
-	int cumulative = 0;
-	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
-	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+	cumulative = 0;
+	item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
 
-	char* feature1 = item0->attr_name;
-	char* feature2 = item1->attr_name;
+	feature1 = item0->attr_name;
+	feature2 = item1->attr_name;
 
     for (int i = 0; i < num_tuples+1; i++) {
 		if(i>=1 && i<=num_tuples)
@@ -1384,7 +1413,7 @@ Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectT
 
 	color[0]=-1;
 	color[num_tuples+1]=-1;
-	int disparity = c[end]- c[start-1];
+	disparity = c[end]- c[start-1];
 	
 	// elog(INFO, "Printing LJP and RJP arrays:");
 	// for (int i = 0; i < num_tuples + 2; i++) {
@@ -1397,20 +1426,22 @@ Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectT
 		elog(INFO,"Disparity is within the epsilon range");
 		return createRange(start,end);
 	}
-	double best_similarity = 0;
-	Range fair_range = createRange(start,end);
-	int disparitydifference =abs(disparity) - epsilon;
-	int jumps = disparitydifference;
-	mystack startleft, startright, endleft, endright;
+
+	best_similarity = 0;
+	fair_range = createRange(start,end);
+	disparitydifference = abs(disparity) - epsilon;
+	jumps = disparitydifference;
+	excesscolor = disparity > 0 ? 1 : -1;
+
 	initializestack(&startleft, "startleft");
 	initializestack(&startright, "startright");
 	initializestack(&endleft, "endleft");
 	initializestack(&endright, "endright");
-	int excesscolor = disparity > 0 ? 1 : -1;
 	pushstack(&startleft, start);
 	pushstack(&startright, start);
 	pushstack(&endleft, end);
 	pushstack(&endright, end);
+
 	while(jumps)
 	{
 		int topindex = top(&startright);
@@ -1481,12 +1512,13 @@ Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectT
 		int er = top(&endright);
 		Range sl_el = createRange(sl,el);
 		double similarity_sl_el = jaccordsimilarity(createRange(start,end), sl_el);
+		dlist_iter iter;
+
 		if(similarity_sl_el > best_similarity)
 		{
 			best_similarity = similarity_sl_el;
 			fair_range = sl_el;
 		}
-		dlist_iter iter;
 		dlist_foreach(iter, &startleft.header)
 		{
 			mynode *node = dlist_container(mynode, node, iter.cur);
@@ -1536,7 +1568,7 @@ Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectT
 	return fair_range;
 }
 
-void update_range(Range* range, int actualStart, int actualEnd, int outputStart, int outputEnd)
+static void update_range(Range* range, int actualStart, int actualEnd, int outputStart, int outputEnd)
 {
 	Range r1 = createRange(actualStart, actualEnd);
 	Range r2 = createRange(outputStart, outputEnd);
@@ -1554,15 +1586,27 @@ void update_range(Range* range, int actualStart, int actualEnd, int outputStart,
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
 {
 
+	int attr_index;
+	int *c, *color;
+	int cumulative = 0;
+	AttrWithInto *item0, *item1;
+	int w1, w2;
+	char* feature1, *feature2;
+	int disparity;
+	Range result;
+	int disparityRight, left, right;
+	mystack rightExpansion, leftExpansion, leftShrink, rightShrink;
+	bool leftExpansionFail = false, leftShrinkFail = false;
+
 	if(start <=0 || end > num_tuples)
 	{
 		elog(ERROR, "Invalid range");
 		return createRange(-1,-1);
 	}
-    int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+    attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 
-	int *c = (int *)malloc((num_tuples+2) * sizeof(int));
-	int *color= (int *)malloc((num_tuples+2) * sizeof(int));
+	c = (int *)malloc((num_tuples+2) * sizeof(int));
+	color= (int *)malloc((num_tuples+2) * sizeof(int));
 	for (int i = 0; i < num_tuples+2; i++) 
 	{
 		c[i] = -1;
@@ -1571,26 +1615,25 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 
 	c[0]=0;
 	c[num_tuples+1]=0;
-	int cumulative = 0;
+	cumulative = 0;
 
-	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
-	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
-	int w1;
+	item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+	
 	if (item0->into_val == NULL) {
 		w1 = 1;
 	} else {
 		w1 = ((A_Const*)item0->into_val)->val.ival.ival;
 	}
 
-	int w2;
 	if (item1->into_val == NULL) {
 		w2 = -1;
 	} else {
 		w2 = -((A_Const*)item1->into_val)->val.ival.ival;
 	}
 
-	char* feature1 = item0->attr_name;
-	char* feature2 = item1->attr_name;
+	feature1 = item0->attr_name;
+	feature2 = item1->attr_name;
 
     for (int i = 0; i < num_tuples+1; i++) {
 		if(i>=1 && i<=num_tuples)
@@ -1613,7 +1656,7 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 
 	color[0]=-1;
 	color[num_tuples+1]=-1;
-	int disparity = c[end]- c[start-1];
+	disparity = c[end]- c[start-1];
 	
 	// elog(INFO, "Printing LJP and RJP arrays:");
 	// for (int i = 0; i < num_tuples + 2; i++) {
@@ -1626,13 +1669,13 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 		elog(INFO,"Disparity is within the epsilon range");
 		return createRange(start,end);
 	}
-	Range result = createRange(0,0);
+	result = createRange(0,0);
 	result.valid = false;
 	result.similarity = 0;
 
-	int disparityRight = disparity;
-	int left = start, right = end;
-	mystack rightExpansion;
+	disparityRight = disparity;
+	left = start; right = end;
+
 	initializestack(&rightExpansion, "rightExpansion");
 	pushstack(&rightExpansion, right);
 	while(abs(disparityRight) > epsilon)
@@ -1647,12 +1690,12 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 	}
 	if(abs(disparityRight) <= epsilon) update_range(&result, left, right, left, top(&rightExpansion));
 
-	mystack leftExpansion, leftShrink;
 	initializestack(&leftExpansion, "leftExpansion");
 	initializestack(&leftShrink, "leftShrink");
 	pushstack(&leftExpansion, left);
 	pushstack(&leftShrink, left);
-	bool leftExpansionFail = false, leftShrinkFail = false;
+
+	leftExpansionFail = false; leftShrinkFail = false;
 	while(size(&rightExpansion) > 0)
 	{
 		int newDisparity = c[top(&rightExpansion)] - c[top(&leftExpansion)-1];
@@ -1690,12 +1733,13 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 		pop(&rightExpansion);
 	}
 
-	mystack rightShrink;
 	initializestack(&rightShrink, "rightShrink");
 	pushstack(&rightShrink, right);
 	disparityRight = c[top(&rightShrink)] - c[left-1];
 	while(abs(disparityRight) > epsilon)
 	{
+		int newRightEnd;
+
 		if(abs(c[top(&rightShrink)] - c[top(&leftShrink)-1]) <= epsilon){
 			update_range(&result, left, right, top(&leftShrink), top(&rightShrink));
 			pop(&leftShrink);
@@ -1706,7 +1750,6 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 			pop(&leftExpansion);
 		}
 
-		int newRightEnd;
 		if(disparityRight > 0) newRightEnd = prevPosPtr[top(&rightShrink) + 1] - 1;
 		else newRightEnd = prevNegPtr[top(&rightShrink) + 1] - 1;
 
@@ -1721,16 +1764,17 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon)
 {
 	int num_color = list_length(subjectToStmt->attr_list);
-
 	int *weights = malloc(num_color * sizeof(int));
 	char **C = malloc(num_color * sizeof(char *));
-
 	int idx = 0;
-
 	ListCell *lc;
+	int **prefix_sums;
+	double best_similarity = 0;
+	Range fair_range = createRange(-1,-1);
+	int attr_index;
+
 	foreach(lc, subjectToStmt->attr_list)  // stmt is your SubjectToStmt*
-	{
-		
+	{	
 		AttrWithInto *item = (AttrWithInto *) lfirst(lc);
 
 		weights[idx] = ((A_Const*)item->into_val)->val.ival.ival;
@@ -1739,20 +1783,16 @@ Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attri
 		idx++;
 	}
 	
-	int **prefix_sums;
-	double best_similarity = 0;
-	Range fair_range = createRange(-1,-1);
-
+	fair_range = createRange(-1,-1);
 	if(start <= 0 || end > num_tuples)
 	{
 		elog(ERROR, "Invalid range");
 		return createRange(-1,-1);
 	}
 
-    int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+    attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 
 	prefix_sums = malloc(num_color * sizeof(int *));
-
 	for (int i = 0; i < num_color; i++)	{
 		prefix_sums[i] = malloc((num_tuples) * sizeof(int)); 
 	}
@@ -1827,16 +1867,17 @@ Range multicolor_getrange(CharPtrVector* vec, char **column_headers, char* attri
 #ifndef min
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
+
 double jaccordsimilarity(Range r1, Range r2){
     int union_r1_r2 = max(r1.end, r2.end) - min(r1.start, r2.start)  + 1;
     int int_r1_r2 = min(r1.end, r2.end) - max(r1.start, r2.start) + 1;
 	double sim = (double)int_r1_r2 / (double)union_r1_r2;
     return sim;
 }
-char *print_table_names_from_query(QueryDesc *queryDesc)
+
+const char* print_table_names_from_query(QueryDesc *queryDesc)
 {
     ListCell *lc;
-
     foreach(lc, queryDesc->plannedstmt->rtable)
     {
         RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
@@ -1854,6 +1895,7 @@ char *print_table_names_from_query(QueryDesc *queryDesc)
 			}
         }
     }
+	return NULL;
 }
 
 
@@ -1896,14 +1938,15 @@ void store_table_data(Oid relid, CharPtrVector *vec)
         bool isnull;
 
         for (int i = 0; i < tupdesc->natts; i++)
-        {
+        {	
+			Datum val;
             if (TupleDescAttr(tupdesc, i)->attisdropped)
             {
                 row[i] = NULL;
                 continue;
             }
 
-            Datum val = heap_getattr(tuple, i + 1, tupdesc, &isnull);
+        	val = heap_getattr(tuple, i + 1, tupdesc, &isnull);
             if (isnull)
             {
                 row[i] = NULL;
@@ -1927,7 +1970,7 @@ void store_table_data(Oid relid, CharPtrVector *vec)
     table_close(rel, AccessShareLock);
 }
 
-bool validrange(Range r)
+static bool validrange(Range r)
 {
 	if(r.start < 1 || r.end < 1 || r.start > num_tuples || r.end > num_tuples)
 	{
@@ -1956,12 +1999,18 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 
 	while(true)
 	{
+		heapnode *maxsimilarity_node;
+		bool topsimilarityfair;
+		int topstart, topend, topstartminus, topendplus, topstartplus, topendminus;
+		Range newrange1, newrange2, newrange3, newrange4;
+		
 		if(pairingheap_is_empty(currheap))
 		{
 			break;
 		}
-		heapnode *maxsimilarity_node = (heapnode *) pairingheap_remove_first(currheap);
-		bool topsimilarityfair = fairness_check(subjectToStmt, color_vector, prefix_sum, maxsimilarity_node->r.start-1, maxsimilarity_node->r.end-1);
+		
+		maxsimilarity_node = (heapnode *) pairingheap_remove_first(currheap);
+		topsimilarityfair = fairness_check(subjectToStmt, color_vector, prefix_sum, maxsimilarity_node->r.start-1, maxsimilarity_node->r.end-1);
 		// elog(INFO, "Range: [%d, %d]", maxsimilarity_node->r.start, maxsimilarity_node->r.end);
 		// elog(INFO, "Similarity: %.2f", maxsimilarity_node->similarity);
 		if(topsimilarityfair)
@@ -1969,16 +2018,19 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 			elog(INFO, "BFSRecursive Best Similarity: %.2f", maxsimilarity_node->similarity);
 			return maxsimilarity_node->r;
 		}
-		int topstart = maxsimilarity_node->r.start;
-		int topend = maxsimilarity_node->r.end;
-		int topstartminus = topstart - 1;
-		int topendplus = topend + 1;
-		int topstartplus = topstart + 1;
-		int topendminus = topend - 1;
-		Range newrange1 = createRange(topstartminus, topend);
-		Range newrange2 = createRange(topstartplus, topend);
-		Range newrange3 = createRange(topstart, topendminus);
-		Range newrange4 = createRange(topstart, topendplus);
+
+		topstart = maxsimilarity_node->r.start;
+		topend = maxsimilarity_node->r.end;
+		topstartminus = topstart - 1;
+		topendplus = topend + 1;
+		topstartplus = topstart + 1;
+		topendminus = topend - 1;
+
+		newrange1 = createRange(topstartminus, topend);
+		newrange2 = createRange(topstartplus, topend);
+		newrange3 = createRange(topstart, topendminus);
+		newrange4 = createRange(topstart, topendplus);
+
 		if(validrange(newrange1))
 		{
 			heapnode *new_node1 = (heapnode *) palloc(sizeof(heapnode));
@@ -2012,12 +2064,12 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 }
 
 bool is_binary_attr(CharPtrVector* vec, int index){
+	char *value1 = NULL;
+	char *value2 = NULL;
+
 	if (vec->size < 2) {
 		return false;
 	}
-
-	char *value1 = NULL;
-	char *value2 = NULL;
 
 	for (int i = 0; i < vec->size; i++) {
 		char *current_value = vec->data[i][index];
@@ -2038,8 +2090,10 @@ bool is_binary_attr(CharPtrVector* vec, int index){
 
 void insert_val(RBTree *rbt, int key, int value){
 	IntRBNode node;
+	IntRBNode *foundNode;
+	
 	node.key = key;
-	IntRBNode *foundNode = (IntRBNode *) rbt_find(rbt, (RBTNode *) &node);
+	foundNode = (IntRBNode *) rbt_find(rbt, (RBTNode *) &node);
 	if(foundNode)
 	{
 		foundNode->values[foundNode->index] = value;
@@ -2047,38 +2101,45 @@ void insert_val(RBTree *rbt, int key, int value){
 	}
 	else
 	{
+		bool newinsert;
 		IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
 		newNode->key = key;
 		newNode->values = (int *) palloc(num_tuples * sizeof(int));
 		newNode->values[0] = value;
 		newNode->index = 1;
 		newNode->start = 0;
-		bool newinsert;
 		rbt_insert(rbt, (RBTNode *) newNode, &newinsert);
 	}
 }
+
 IntRBNode *get_node(RBTree *rbt, int key){
 	IntRBNode node;
+	RBTNode *foundNode;
 	node.key = key;
-	RBTNode *foundNode = rbt_find(rbt, (RBTNode *) &node);
+	foundNode = rbt_find(rbt, (RBTNode *) &node);
 	return (IntRBNode *) foundNode;
 }
 
 void buildingpointers_w(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt){
-	elog(INFO, "Preprocessing buildpointer with weights for the Given Query");
-	bool newinsert;
-	int cumulative;
+	int cumulative, sort_attr_index, attr_index;
+	int w1, w2;
+	int *c, *color;
+	char* feature1, *feature2;
+	RBTree *fwdPosBST, *fwdNegBST, *prevPosBST, *prevNegBST;
+	AttrWithInto *item0, *item1;
 	
-	int sort_attr_index = get_attribute_index(column_headers, natts, attribute);
-	int attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+	elog(INFO, "Preprocessing buildpointer with weights for the Given Query");
+	sort_attr_index = get_attribute_index(column_headers, natts, attribute);
+	attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
+
 	merge_sort(0, num_tuples - 1, sort_attr_index);
-	RBTree* fwdPosBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+	fwdPosBST = rbt_create(sizeof(IntRBNode),   /* Node size */
 						  int_rbtree_comparator, /* Comparator */
 						  int_rbtree_combiner,   /* Combiner */
 						  int_rbtree_allocfunc,  /* Allocator */
 						  int_rbtree_freefunc,   /* Free function */
 						  NULL);
-	RBTree* fwdNegBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+	fwdNegBST = rbt_create(sizeof(IntRBNode),   /* Node size */
 	int_rbtree_comparator, /* Comparator */
 	int_rbtree_combiner,   /* Combiner */
 	int_rbtree_allocfunc,  /* Allocator */
@@ -2088,31 +2149,30 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 
 	fwdPosPtr = (int *)malloc((num_tuples+2) * sizeof(int));
 	fwdNegPtr = (int *)malloc((num_tuples+2) * sizeof(int));
-	int *c = (int *)malloc((num_tuples+2) * sizeof(int));
-	int *color = (int *)malloc((num_tuples+2) * sizeof(int));
+	c = (int *)malloc((num_tuples+2) * sizeof(int));
+	color = (int *)malloc((num_tuples+2) * sizeof(int));
 	for (int i = 0; i < num_tuples+2; i++) 
 	{
 		fwdPosPtr[i] = -1;
 		fwdNegPtr[i] = -1;
 	}
-	AttrWithInto *item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
-	AttrWithInto *item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
-	int w1;
+	item0 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 0);
+	item1 = (AttrWithInto *) list_nth(subjectToStmt->attr_list, 1);
+
 	if (item0->into_val == NULL) {
 		w1 = 1;
 	} else {
 		w1 = ((A_Const*)item0->into_val)->val.ival.ival;
 	}
 
-	int w2;
 	if (item1->into_val == NULL) {
 		w2 = -1;
 	} else {
 		w2 = -((A_Const*)item1->into_val)->val.ival.ival;
 	}
 
-	char* feature1 = item0->attr_name;
-	char* feature2 = item1->attr_name;
+	feature1 = item0->attr_name;
+	feature2 = item1->attr_name;
 	for (int i = 0; i < num_tuples; i++) {
         if (my_strcmp(outputArray[i][attr_index], feature2) == 0) {
 			color[i+1]=w2;
@@ -2127,6 +2187,9 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	color[num_tuples+1]=0;
 	
 	for (int i = 0; i < num_tuples+1; i++){
+		RBTreeIterator *iter;
+		IntRBNode *node;
+
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -2137,9 +2200,9 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 			c[i] = cumulative;
 		}	
 
-		RBTreeIterator *iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
+		iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
 		rbt_begin_iterate(fwdPosBST, LeftRightWalk, iter);
-		IntRBNode *node = (IntRBNode *) rbt_iterate(iter);
+		node = (IntRBNode *) rbt_iterate(iter);
 		while (node && node->key < c[i]) {
 			for (int j = node->start; j < node->index; j++) {
 				fwdPosPtr[node->values[j]] = i;
@@ -2166,13 +2229,13 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	pfree(fwdPosBST);
 	pfree(fwdNegBST);
 
-	RBTree* prevPosBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+	prevPosBST = rbt_create(sizeof(IntRBNode),   /* Node size */
 						int_rbtree_comparator, /* Comparator */
 						int_rbtree_combiner,   /* Combiner */
 						int_rbtree_allocfunc,  /* Allocator */
 						int_rbtree_freefunc,   /* Free function */
 						NULL); 
-	RBTree* prevNegBST = rbt_create(sizeof(IntRBNode),   /* Node size */
+	prevNegBST = rbt_create(sizeof(IntRBNode),   /* Node size */
 	int_rbtree_comparator, /* Comparator */
 	int_rbtree_combiner,   /* Combiner */
 	int_rbtree_allocfunc,  /* Allocator */
@@ -2192,6 +2255,9 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	}
 
 	for(int i = num_tuples+1; i >=1; i--) {
+		RBTreeIterator *iter;
+		IntRBNode *node;
+
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -2201,9 +2267,9 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 			}
 			c[i] = cumulative;
 		}	
-		RBTreeIterator *iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
+		iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
 		rbt_begin_iterate(prevPosBST, LeftRightWalk, iter);
-		IntRBNode *node = (IntRBNode *) rbt_iterate(iter);
+		node = (IntRBNode *) rbt_iterate(iter);
 		while (node && node->key < c[i]) {
 			for (int j = node->start; j < node->index; j++) {
 				prevPosPtr[node->values[j]] = i;

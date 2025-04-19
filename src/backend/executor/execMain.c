@@ -393,7 +393,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	EState	   *estate;
 	CmdType		operation;
 	DestReceiver *dest;
-	bool		sendTuples, fair;
+	bool		sendTuples;
 	MemoryContext oldcontext;
 	SubjectToStmt* subjectToStmt;
 	StringVector *column_header;
