@@ -28,22 +28,6 @@ typedef struct RBTNode
 	struct RBTNode *parent;		/* parent, or NULL (not RBTNIL!) if none */
 } RBTNode;
 
-typedef struct IntRBNode
-{
-	RBTNode rbt_node;  /* Base RBTNode (must be first) */
-	int key;           /* Integer key */
-	int *values;         /* Integer value */
-	int index;
-	int start;
-} IntRBNode;
-
-typedef struct WeightedPointersRBNode
-{
-	RBTNode rbt_node;  /* Base RBTNode (must be first) */
-	int weight1, weight2;         
-	int *fwdPosPtr, *fwdNegPtr, *prevPosPtr, *prevNegPtr;
-} WeightedPointersRBNode;
-
 /* Opaque struct representing a whole tree */
 typedef struct RBTree RBTree;
 

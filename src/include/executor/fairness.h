@@ -50,6 +50,25 @@
 #include "executor/executor.h"
 #include "parser/parsetree.h"
 
+/* Define key/value types */
+typedef struct MyEntry {
+    const char *key;  // just the key directly
+    int value;
+    uint8 status;
+} MyEntry;
+
+#include "common/hashfn.h"
+/* Generate hash table functions/types */
+#define SH_PREFIX myhash
+#define SH_KEY_TYPE const char *
+#define SH_ELEMENT_TYPE MyEntry
+#define SH_KEY key
+#define SH_HASH_KEY(tb, key) string_hash((key), strlen(key))
+#define SH_EQUAL(tb, a, b) (strcmp((a), (b)) == 0)
+#define SH_SCOPE static inline  /* required */
+#define SH_USE_STRINGS
+#define SH_DECLARE
+#include "lib/simplehash.h"
 
 
 StringVector* compute_headers(QueryDesc* queryDesc);
