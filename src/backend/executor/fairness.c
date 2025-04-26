@@ -130,6 +130,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 	int table_index;
 
     if(reset_table){
+		elog(INFO, "Resetting tables");
 		reset_table = false;
 		tables = (StringVector *) malloc(sizeof(StringVector));
 		table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
@@ -163,6 +164,13 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		table_index = string_vector_find(tables, table);
 
 		if (table_index == -1){
+			elog(INFO, "Table not found, creating new table");
+			elog(INFO, "Number of tables already seen: %s", table);
+			for (int i = 0; i < tables->size; i++)
+			{
+				elog(INFO, "Table %d: %s", i, tables->data[i]);
+			}
+			
 			PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 			StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
 			PtrVector *new_table_prefix_sums = (PtrVector *) malloc(sizeof(PtrVector));
@@ -171,25 +179,26 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 			PtrVector *new_table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
 			PtrVector *new_table_weighted_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 
-			string_vector_push(tables, pstrdup(table));
-			bool_vector_push(built_pointers_vec, false);
-            bool_vector_push(preprocessed_pointers_vec, false);
-			bool_vector_push(reset_outputArrays_vec, true);
+			string_vector_push(tables, table);
 
-			ptr_vector_init(new_table_pointers);
+			bool_vector_push(built_pointers_vec, 		false);
+            bool_vector_push(preprocessed_pointers_vec, false);
+			bool_vector_push(reset_outputArrays_vec, 	true);
+
 			string_vector_init(new_table_attributes);
+			ptr_vector_init(new_table_pointers);
 			ptr_vector_init(new_table_prefix_sums);
 			ptr_vector_init(new_table_distinct_colors);
 			ptr_vector_init(new_table_LJP);
 			ptr_vector_init(new_table_RJP);
 			ptr_vector_init(new_table_weighted_pointers);
 
-			ptr_vector_push(table_pointers, (void *)new_table_pointers);
-			ptr_vector_push(table_attributes, (void *)new_table_attributes);
-			ptr_vector_push(table_prefix_sums, (void *)new_table_prefix_sums);
-			ptr_vector_push(table_distinct_colors, (void *)new_table_distinct_colors);
-			ptr_vector_push(table_LJP, (void *)new_table_LJP);
-			ptr_vector_push(table_RJP, (void *)new_table_RJP);
+			ptr_vector_push(table_pointers, 		 (void *)new_table_pointers);
+			ptr_vector_push(table_attributes, 		 (void *)new_table_attributes);
+			ptr_vector_push(table_prefix_sums, 		 (void *)new_table_prefix_sums);
+			ptr_vector_push(table_distinct_colors, 	 (void *)new_table_distinct_colors);
+			ptr_vector_push(table_LJP, 				 (void *)new_table_LJP);
+			ptr_vector_push(table_RJP, 				 (void *)new_table_RJP);
 			ptr_vector_push(table_weighted_pointers, (void *)new_table_weighted_pointers);
 
 			table_index = string_vector_find(tables, table);
@@ -323,6 +332,8 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		
 		if(!preprocessed_pointers_vec->data[table_index] || attr_index == -1){
             elog(INFO, "PRECOMPUTING FOR table: %s, attribute: %s", table, attribute);
+			elog(INFO, "REASON: attribute index: %d", attr_index);
+			elog(INFO, "REASON: preprocessed_pointers_vec: %d", preprocessed_pointers_vec->data[table_index]);
 			int color_count = 0;
 			char** colors;
 			
@@ -1988,8 +1999,11 @@ const char* print_table_names_from_query(QueryDesc *queryDesc)
             Oid relid = rte->relid;
             const char *relname = get_rel_name(relid);
 
-            if (relname)
-                return relname;
+			if (relname) {
+				char *result = (char *) malloc(strlen(relname) + 1);
+				memcpy(result, relname, strlen(relname) + 1);
+				return result;
+			}
             else{
                 elog(INFO, "Could not resolve table name for relid %u", relid);
 				return NULL;
