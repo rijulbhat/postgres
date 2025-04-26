@@ -452,13 +452,22 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 					buildingpointers_w(column_header->data, attribute, vec->natts, subjectToStmt);
 					
 					weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
+					
 					weighted_pointers_node->weight1 = w1;
 					weighted_pointers_node->weight2 = w2;
-					weighted_pointers_node->fwdNegPtr = fwdNegPtr;
-					weighted_pointers_node->fwdPosPtr = fwdPosPtr;
-					weighted_pointers_node->prevNegPtr = prevNegPtr;
-					weighted_pointers_node->prevPosPtr = prevPosPtr;
 
+					if(switch_ptrs){
+						weighted_pointers_node->fwdNegPtr = fwdPosPtr;
+						weighted_pointers_node->fwdPosPtr = fwdNegPtr;
+						weighted_pointers_node->prevNegPtr = prevNegPtr;
+						weighted_pointers_node->prevPosPtr = prevPosPtr;
+					}
+					else{
+						weighted_pointers_node->fwdNegPtr = fwdNegPtr;
+						weighted_pointers_node->fwdPosPtr = fwdPosPtr;
+						weighted_pointers_node->prevNegPtr = prevNegPtr;
+						weighted_pointers_node->prevPosPtr = prevPosPtr;
+					}
 					// elog(INFO, "Built pointers");	
 					if (weightedPointersContext == NULL) {
 						weightedPointersContext = AllocSetContextCreate(
@@ -523,10 +532,19 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 						weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
 						weighted_pointers_node->weight1 = w1;
 						weighted_pointers_node->weight2 = w2;
-						weighted_pointers_node->fwdNegPtr = fwdNegPtr;
-						weighted_pointers_node->fwdPosPtr = fwdPosPtr;
-						weighted_pointers_node->prevNegPtr = prevNegPtr;
-						weighted_pointers_node->prevPosPtr = prevPosPtr;
+						
+						if(switch_ptrs){
+							weighted_pointers_node->fwdNegPtr = fwdPosPtr;
+							weighted_pointers_node->fwdPosPtr = fwdNegPtr;
+							weighted_pointers_node->prevNegPtr = prevNegPtr;
+							weighted_pointers_node->prevPosPtr = prevPosPtr;
+						}
+						else{
+							weighted_pointers_node->fwdNegPtr = fwdNegPtr;
+							weighted_pointers_node->fwdPosPtr = fwdPosPtr;
+							weighted_pointers_node->prevNegPtr = prevNegPtr;
+							weighted_pointers_node->prevPosPtr = prevPosPtr;
+						}
 
 						// elog(INFO, "Inserted new node");
 						rbt_insert(rbt, (RBTNode *) weighted_pointers_node, &newinsert);
@@ -551,9 +569,24 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				}
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
+				for (int i = 0; i < 10; i++) {
+					for (int j = 0; j < MAX_ATTRS; j++) {
+						elog(INFO, "outputArray[%d][%d] = %s", i, j, outputArray[i][j]);
+					}
+				}
+				elog(INFO, "Inputs to getrange:");
+				elog(INFO, "column_headers: %p", column_header->data);
+				for (int i = 0; i < vec->natts; i++) {
+					elog(INFO, "column_headers[%d]: %s", i, column_header->data[i]);
+				}
+				elog(INFO, "natts: %d", vec->natts);
+				elog(INFO, "subjectToStmt: %p", subjectToStmt);
+				elog(INFO, "start: %d", l_index);
+				elog(INFO, "end: %d", r_index);
+				elog(INFO, "epsilon: %d", epsilon);
 				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
-
-				// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
+				// elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
+				elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 				// if (output.end == num_tuples + 1)
 				// {
 				// 	output.end = num_tuples;
@@ -578,7 +611,13 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
+				// for(int i = 0;i<10;i++)
+				// {
+				
+
+				// }
 				output = multicolor_getrange(column_header->data, attribute, vec->natts, subjectToStmt, prefix_sums, l_index, r_index, epsilon);
+
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				//%jalu writing this, do not hit
 				originalrange = createRange(l_index, r_index);
@@ -1800,12 +1839,10 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 		pushstack(&rightExpansion, rightEnd);
 	}
 	if(abs(disparityRight) <= epsilon) update_range(&result, left, right, left, top(&rightExpansion));
-
 	initializestack(&leftExpansion, "leftExpansion");
 	initializestack(&leftShrink, "leftShrink");
 	pushstack(&leftExpansion, left);
 	pushstack(&leftShrink, left);
-
 	leftExpansionFail = false; leftShrinkFail = false;
 	while(size(&rightExpansion) > 0)
 	{
@@ -1823,30 +1860,41 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 			newDisparity = c[top(&rightExpansion)] - c[top(&leftExpansion)-1];
 		}
 		if(size(&leftExpansion) > 1 && !leftExpansionFail) update_range(&result, left, right, top(&leftExpansion), top(&rightExpansion));
-
 		newDisparity = c[top(&rightExpansion)] - c[top(&leftShrink)-1];
-
 		while(abs(newDisparity) > epsilon)
 		{
 			int newLeftEnd;
-			if(newDisparity > 0) newLeftEnd = fwdPosPtr[top(&leftShrink) - 1];
+			if(newDisparity > 0) 
+			{
+				elog(INFO,"TOP LEFT SHRINK: %d", top(&leftShrink));
+				newLeftEnd = fwdPosPtr[top(&leftShrink) - 1];
+				elog(INFO,"newLeftEnd: %d", newLeftEnd);
+			}
 			else newLeftEnd = fwdNegPtr[top(&leftShrink) - 1];
 			if(newLeftEnd == -1) {
 				leftShrinkFail = true;
 				break;
 			}
+			elog(INFO, "newLeftEnd: %d", newLeftEnd+1);
+			elog(INFO, "pushing here");
 			pushstack(&leftShrink, newLeftEnd + 1);
 			newDisparity = c[top(&rightExpansion)] - c[top(&leftShrink)-1];
 		}
-
-		if(size(&leftShrink) > 1 && !leftShrinkFail) update_range(&result, left, right, top(&leftShrink), top(&rightExpansion));
-
+		elog(INFO, "init 3 Output start: %d, Output end: %d", result.start, result.end);
+		elog(INFO, "leftShrink size: %d, leftShrinkFail: %d", size(&leftShrink), leftShrinkFail);
+		if(size(&leftShrink) > 1 && !leftShrinkFail)
+		{
+			elog(INFO,"INSIDE IF LOOP");
+			update_range(&result, left, right, top(&leftShrink), top(&rightExpansion));
+		} 
+		elog(INFO, "update 3 Output start: %d, Output end: %d", result.start, result.end);
 		pop(&rightExpansion);
 	}
 
 	initializestack(&rightShrink, "rightShrink");
 	pushstack(&rightShrink, right);
 	disparityRight = c[top(&rightShrink)] - c[left-1];
+	elog(INFO, "Output start: %d, Output end: %d", result.start, result.end);
 	while(abs(disparityRight) > epsilon)
 	{
 		int newRightEnd;
@@ -1868,7 +1916,7 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 		pushstack(&rightShrink, newRightEnd);
 		disparityRight = c[top(&rightShrink)] - c[left-1];
 	}
-	// elog(INFO, "result start: %d, end: %d, similarity = %f", result.start, result.end, result.similarity);
+	elog(INFO, "result start: %d, end: %d, similarity = %f", result.start, result.end, result.similarity);
 	return result;
 }
 
