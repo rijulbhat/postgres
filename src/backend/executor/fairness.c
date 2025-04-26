@@ -570,7 +570,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 				elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 				
-				if(output.start == output.end){
+				if(output.start >= output.end){
 					elog(INFO, "NO CORRECTED QUERY FOUND");
 				}	
 				else{
