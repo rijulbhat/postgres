@@ -13,6 +13,17 @@
 #define SH_DEFINE
 #include "lib/simplehash.h"
 
+/* Generate hash table functions/types for (int, int) pair keys */
+#define SH_PREFIX mypairhash
+#define SH_KEY_TYPE IntPair
+#define SH_ELEMENT_TYPE MyPairEntry
+#define SH_KEY key
+#define SH_HASH_KEY(tb, key) intpair_hash(&(key))
+#define SH_EQUAL(tb, a, b) ((a).key1 == (b).key1 && (a).key2 == (b).key2)  // Updated comparison for new field names
+#define SH_SCOPE static inline
+#define SH_DEFINE
+#include "lib/simplehash.h"
+
 typedef struct Range {
 	int start;
 	int end;
@@ -124,6 +135,7 @@ static int MAX_ATTRS = 0;
 static int sort_attr_index = 0;
 static int color_index = 0;
 static myhash_hash *hash;
+static mypairhash_hash *int_pair_hash;
 
 void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToStmt* subjectToStmt){
     int epsilon;
@@ -597,14 +609,13 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				
 
 				// }
+
 				output = multicolor_getrange(column_header->data, attribute, vec->natts, subjectToStmt, prefix_sums, l_index, r_index, epsilon);
 
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				//%jalu writing this, do not hit
 				originalrange = createRange(l_index, r_index);
-				elog(INFO, "HELLO HELLO");
 				recursivebfsoutput = recursivebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
-				elog(INFO, "HELLO HELLO");
 				elog(INFO, "BFSRecursive Fair range: [%d, %d]", recursivebfsoutput.start, recursivebfsoutput.end);
 				//%jalu ending this, do not blame
 
@@ -2131,16 +2142,19 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 	first_node->similarity = jaccordsimilarity(originalrange, originalrange);
 	pairingheap_add(currheap, (pairingheap_node *) first_node);	
 	
+	int_pair_hash = mypairhash_create(CurrentMemoryContext, 128, NULL);
+	
 	// elog(INFO, "Original Range: [%d, %d]", originalrange.start, originalrange.end);
 	// elog(INFO, "Original Similarity: %.2f", first_node->similarity);
 
 	while(true)
 	{
+
 		heapnode *maxsimilarity_node;
 		bool topsimilarityfair;
 		int topstart, topend, topstartminus, topendplus, topstartplus, topendminus;
 		Range newrange1, newrange2, newrange3, newrange4;
-		
+
 		if(pairingheap_is_empty(currheap))
 		{
 			break;
@@ -2148,8 +2162,6 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		
 		maxsimilarity_node = (heapnode *) pairingheap_remove_first(currheap);
 		topsimilarityfair = fairness_check(subjectToStmt, color_vector, prefix_sums, maxsimilarity_node->r.start-1, maxsimilarity_node->r.end-1);
-		elog(INFO, "Range: [%d, %d]", maxsimilarity_node->r.start, maxsimilarity_node->r.end);
-		elog(INFO, "Similarity: %.2f", maxsimilarity_node->similarity);
 		if(topsimilarityfair)
 		{
             if (maxsimilarity_node->similarity > 0){
@@ -2179,30 +2191,73 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 			heapnode *new_node1 = (heapnode *) palloc(sizeof(heapnode));
 			new_node1->r = newrange1;
 			new_node1->similarity = jaccordsimilarity(originalrange, newrange1);
-			if(new_node1->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node1);
+			if(new_node1->similarity < maxsimilarity_node->similarity)
+			{
+				
+				bool found;
+				IntPair key = {newrange1.start, newrange1.end};
+				MyPairEntry*entry = mypairhash_insert(int_pair_hash, key, &found);
+
+				if(!found)
+				{
+					pairingheap_add(currheap, (pairingheap_node *) new_node1);
+				}
+
+			}
 		}
 		if(validrange(newrange2))
 		{
 			heapnode *new_node2 = (heapnode *) palloc(sizeof(heapnode));
 			new_node2->r = newrange2;
 			new_node2->similarity = jaccordsimilarity(originalrange, newrange2);
-			if(new_node2->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node2);
+			if(new_node2->similarity < maxsimilarity_node->similarity)
+			{
+				bool found;
+				IntPair key = {newrange2.start, newrange2.end};
+				MyPairEntry*entry = mypairhash_insert(int_pair_hash, key, &found);
+
+				if(!found)
+				{
+					pairingheap_add(currheap, (pairingheap_node *) new_node2);
+				}
+			}
 		}
 		if(validrange(newrange3))
 		{
 			heapnode *new_node3 = (heapnode *) palloc(sizeof(heapnode));
 			new_node3->r = newrange3;
 			new_node3->similarity = jaccordsimilarity(originalrange, newrange3);
-			if(new_node3->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node3);
+			if(new_node3->similarity < maxsimilarity_node->similarity)
+			{
+				bool found;
+				IntPair key = {newrange3.start, newrange3.end};
+				MyPairEntry*entry = mypairhash_insert(int_pair_hash, key, &found);
+
+				if(!found)
+				{
+					pairingheap_add(currheap, (pairingheap_node *) new_node3);
+				}
+			}
 		}
 		if(validrange(newrange4))
 		{
 			heapnode *new_node4 = (heapnode *) palloc(sizeof(heapnode));
 			new_node4->r = newrange4;
 			new_node4->similarity = jaccordsimilarity(originalrange, newrange4);
-			if(new_node4->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node4);
+			if(new_node4->similarity < maxsimilarity_node->similarity)
+			{
+				bool found;
+				IntPair key = {newrange2.start, newrange2.end};
+				MyPairEntry*entry = mypairhash_insert(int_pair_hash, key, &found);
+
+				if(!found)
+				{
+					pairingheap_add(currheap, (pairingheap_node *) new_node4);
+				}
+			}
 		}
 	}
+	
 	return createRange(-1, -1);
 }
 

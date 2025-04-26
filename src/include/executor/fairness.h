@@ -57,6 +57,31 @@ typedef struct MyEntry {
     uint8 status;
 } MyEntry;
 
+typedef struct IntPair
+{
+    int key1;
+    int key2;
+} IntPair;
+
+
+typedef struct MyPairEntry
+{
+    IntPair key;
+    int value;
+    uint8 status;
+    /* your value fields here */
+} MyPairEntry;
+
+// Hash function for IntPair (updated for new field names)
+static inline uint32
+intpair_hash(const IntPair *key)
+{
+    uint32 x = (uint32) key->key1;
+    uint32 y = (uint32) key->key2;
+    x ^= y + 0x9e3779b9 + (x << 6) + (x >> 2);  // Simple hash for the pair
+    return x;
+}
+
 #include "common/hashfn.h"
 /* Generate hash table functions/types */
 #define SH_PREFIX myhash
@@ -70,6 +95,16 @@ typedef struct MyEntry {
 #define SH_DECLARE
 #include "lib/simplehash.h"
 
+/* Generate hash table functions/types for (int, int) pair keys */
+#define SH_PREFIX mypairhash
+#define SH_KEY_TYPE IntPair
+#define SH_ELEMENT_TYPE MyPairEntry
+#define SH_KEY key
+#define SH_HASH_KEY(tb, key) intpair_hash(&(key))
+#define SH_EQUAL(tb, a, b) ((a).key1 == (b).key1 && (a).key2 == (b).key2)  // Updated comparison for new field names
+#define SH_SCOPE static inline
+#define SH_DECLARE
+#include "lib/simplehash.h"
 
 StringVector* compute_headers(QueryDesc* queryDesc);
 void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToStmt* subjectToStmt);
