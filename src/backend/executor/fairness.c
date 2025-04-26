@@ -554,14 +554,14 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
 
 				// elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
-				if (output.end == num_tuples + 1)
-				{
-					output.end = num_tuples;
-				}
-				if (output.start == 0)
-				{
-					output.start = 1;
-				}
+				// if (output.end == num_tuples + 1)
+				// {
+				// 	output.end = num_tuples;
+				// }
+				// if (output.start == 0)
+				// {
+				// 	output.start = 1;
+				// }
 				if(output.start == output.end){
 					elog(INFO, "NO CORRECTED QUERY FOUND");
 				}	
@@ -582,7 +582,9 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				//%jalu writing this, do not hit
 				originalrange = createRange(l_index, r_index);
+				elog(INFO, "HELLO HELLO");
 				recursivebfsoutput = recursivebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
+				elog(INFO, "HELLO HELLO");
 				elog(INFO, "BFSRecursive Fair range: [%d, %d]", recursivebfsoutput.start, recursivebfsoutput.end);
 				//%jalu ending this, do not blame
 
@@ -1866,7 +1868,7 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 		pushstack(&rightShrink, newRightEnd);
 		disparityRight = c[top(&rightShrink)] - c[left-1];
 	}
-	elog(INFO, "result start: %d, end: %d, similarity = %f", result.start, result.end, result.similarity);
+	// elog(INFO, "result start: %d, end: %d, similarity = %f", result.start, result.end, result.similarity);
 	return result;
 }
 
@@ -2126,8 +2128,8 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		
 		maxsimilarity_node = (heapnode *) pairingheap_remove_first(currheap);
 		topsimilarityfair = fairness_check(subjectToStmt, color_vector, prefix_sums, maxsimilarity_node->r.start-1, maxsimilarity_node->r.end-1);
-		// elog(INFO, "Range: [%d, %d]", maxsimilarity_node->r.start, maxsimilarity_node->r.end);
-		// elog(INFO, "Similarity: %.2f", maxsimilarity_node->similarity);
+		elog(INFO, "Range: [%d, %d]", maxsimilarity_node->r.start, maxsimilarity_node->r.end);
+		elog(INFO, "Similarity: %.2f", maxsimilarity_node->similarity);
 		if(topsimilarityfair)
 		{
             if (maxsimilarity_node->similarity > 0){
