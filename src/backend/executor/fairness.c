@@ -459,8 +459,8 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 					if(switch_ptrs){
 						weighted_pointers_node->fwdNegPtr = fwdPosPtr;
 						weighted_pointers_node->fwdPosPtr = fwdNegPtr;
-						weighted_pointers_node->prevNegPtr = prevNegPtr;
-						weighted_pointers_node->prevPosPtr = prevPosPtr;
+						weighted_pointers_node->prevNegPtr = prevPosPtr;
+						weighted_pointers_node->prevPosPtr = prevNegPtr;
 					}
 					else{
 						weighted_pointers_node->fwdNegPtr = fwdNegPtr;
@@ -567,34 +567,9 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 						prevNegPtr = weighted_pointers_node->prevNegPtr;
 					}
 				}
-
-				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
-				for (int i = 0; i < 10; i++) {
-					for (int j = 0; j < MAX_ATTRS; j++) {
-						elog(INFO, "outputArray[%d][%d] = %s", i, j, outputArray[i][j]);
-					}
-				}
-				elog(INFO, "Inputs to getrange:");
-				elog(INFO, "column_headers: %p", column_header->data);
-				for (int i = 0; i < vec->natts; i++) {
-					elog(INFO, "column_headers[%d]: %s", i, column_header->data[i]);
-				}
-				elog(INFO, "natts: %d", vec->natts);
-				elog(INFO, "subjectToStmt: %p", subjectToStmt);
-				elog(INFO, "start: %d", l_index);
-				elog(INFO, "end: %d", r_index);
-				elog(INFO, "epsilon: %d", epsilon);
 				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
-				// elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
-				// if (output.end == num_tuples + 1)
-				// {
-				// 	output.end = num_tuples;
-				// }
-				// if (output.start == 0)
-				// {
-				// 	output.start = 1;
-				// }
+				
 				if(output.start == output.end){
 					elog(INFO, "NO CORRECTED QUERY FOUND");
 				}	
@@ -1866,35 +1841,27 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 			int newLeftEnd;
 			if(newDisparity > 0) 
 			{
-				elog(INFO,"TOP LEFT SHRINK: %d", top(&leftShrink));
 				newLeftEnd = fwdPosPtr[top(&leftShrink) - 1];
-				elog(INFO,"newLeftEnd: %d", newLeftEnd);
 			}
 			else newLeftEnd = fwdNegPtr[top(&leftShrink) - 1];
 			if(newLeftEnd == -1) {
 				leftShrinkFail = true;
 				break;
 			}
-			elog(INFO, "newLeftEnd: %d", newLeftEnd+1);
-			elog(INFO, "pushing here");
 			pushstack(&leftShrink, newLeftEnd + 1);
 			newDisparity = c[top(&rightExpansion)] - c[top(&leftShrink)-1];
 		}
-		elog(INFO, "init 3 Output start: %d, Output end: %d", result.start, result.end);
-		elog(INFO, "leftShrink size: %d, leftShrinkFail: %d", size(&leftShrink), leftShrinkFail);
 		if(size(&leftShrink) > 1 && !leftShrinkFail)
 		{
-			elog(INFO,"INSIDE IF LOOP");
 			update_range(&result, left, right, top(&leftShrink), top(&rightExpansion));
 		} 
-		elog(INFO, "update 3 Output start: %d, Output end: %d", result.start, result.end);
 		pop(&rightExpansion);
 	}
 
 	initializestack(&rightShrink, "rightShrink");
 	pushstack(&rightShrink, right);
 	disparityRight = c[top(&rightShrink)] - c[left-1];
-	elog(INFO, "Output start: %d, Output end: %d", result.start, result.end);
+	
 	while(abs(disparityRight) > epsilon)
 	{
 		int newRightEnd;
@@ -1908,7 +1875,6 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 			update_range(&result, left, right, top(&leftExpansion), top(&rightShrink));
 			pop(&leftExpansion);
 		}
-
 		if(disparityRight > 0) newRightEnd = prevPosPtr[top(&rightShrink) + 1] - 1;
 		else newRightEnd = prevNegPtr[top(&rightShrink) + 1] - 1;
 
