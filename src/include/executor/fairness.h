@@ -95,6 +95,16 @@ intpair_hash(const IntPair *key)
 #define SH_DECLARE
 #include "lib/simplehash.h"
 
+#undef SH_PREFIX
+#undef SH_KEY_TYPE
+#undef SH_ELEMENT_TYPE
+#undef SH_KEY
+#undef SH_HASH_KEY
+#undef SH_EQUAL
+#undef SH_SCOPE
+#undef SH_USE_STRINGS
+#undef SH_DECLARE
+
 /* Generate hash table functions/types for (int, int) pair keys */
 #define SH_PREFIX mypairhash
 #define SH_KEY_TYPE IntPair
@@ -105,6 +115,15 @@ intpair_hash(const IntPair *key)
 #define SH_SCOPE static inline
 #define SH_DECLARE
 #include "lib/simplehash.h"
+
+#undef SH_PREFIX
+#undef SH_KEY_TYPE
+#undef SH_ELEMENT_TYPE
+#undef SH_KEY
+#undef SH_HASH_KEY
+#undef SH_EQUAL
+#undef SH_SCOPE
+#undef SH_DECLARE
 
 StringVector* compute_headers(QueryDesc* queryDesc);
 void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToStmt* subjectToStmt);

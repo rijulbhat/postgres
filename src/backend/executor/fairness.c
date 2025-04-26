@@ -13,6 +13,16 @@
 #define SH_DEFINE
 #include "lib/simplehash.h"
 
+#undef SH_PREFIX
+#undef SH_KEY_TYPE
+#undef SH_ELEMENT_TYPE
+#undef SH_KEY
+#undef SH_HASH_KEY
+#undef SH_EQUAL
+#undef SH_SCOPE
+#undef SH_USE_STRINGS
+#undef SH_DEFINE
+
 /* Generate hash table functions/types for (int, int) pair keys */
 #define SH_PREFIX mypairhash
 #define SH_KEY_TYPE IntPair
@@ -23,6 +33,15 @@
 #define SH_SCOPE static inline
 #define SH_DEFINE
 #include "lib/simplehash.h"
+
+#undef SH_PREFIX
+#undef SH_KEY_TYPE
+#undef SH_ELEMENT_TYPE
+#undef SH_KEY
+#undef SH_HASH_KEY
+#undef SH_EQUAL
+#undef SH_SCOPE
+#undef SH_DEFINE
 
 typedef struct Range {
 	int start;
