@@ -115,6 +115,7 @@ static PtrVector *table_weighted_pointers;
 static PtrVector *table_prefix_sums;
 static PtrVector *table_distinct_colors;
 static StringVector *tables;
+static IntVector *num_tuples_vec;
 // PtrVector *pointers;
 static MemoryContext weightedPointersContext = NULL;
 static bool reset_table = true;
@@ -143,6 +144,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		table_weighted_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 		table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
 		table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
+		num_tuples_vec = (IntVector *) malloc(sizeof(IntVector));
 		
         string_vector_init(tables);
 		ptr_vector_init(table_pointers);
@@ -155,6 +157,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		ptr_vector_init(table_weighted_pointers);
 		ptr_vector_init(table_LJP);
 		ptr_vector_init(table_RJP);
+		int_vector_init(num_tuples_vec);
 	}
 
 	table = print_table_names_from_query(queryDesc);
@@ -305,35 +308,35 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				}
 			}
 		}
-	
-		scanrelid = scan->scanrelid;
-		vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
-		if (scanrelid > 0)
-		{
-			RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
-			relid = rte->relid;
-			
-			char_ptr_vector_init(vec);
-			store_table_data(relid, vec);
-	
-			// elog(INFO, "Cached data from relid: %u", relid);
-		}
-		else
-		{
-			elog(WARNING, "Invalid scanrelid (0)");
-		}
 
-		sort_attr_index = get_attribute_index(column_header->data, vec->natts, attribute);
-		color_index = get_attribute_index(column_header->data, vec->natts, subjectToStmt->attr);
+		MAX_ATTRS = column_header->natts;
+		sort_attr_index = get_attribute_index(column_header->data, MAX_ATTRS, attribute);
+		color_index = get_attribute_index(column_header->data, MAX_ATTRS, subjectToStmt->attr);
 		attr_index = string_vector_find(table_attributes->data[table_index], attribute);
 		epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-		num_tuples = vec -> size;
-		MAX_ATTRS = column_header->natts;
 		
 		if(!preprocessed_pointers_vec->data[table_index] || attr_index == -1){
+			
+			scanrelid = scan->scanrelid;
+			vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
+			if (scanrelid > 0)
+			{
+				RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
+				relid = rte->relid;
+				
+				char_ptr_vector_init(vec);
+				store_table_data(relid, vec);
+		
+				// elog(INFO, "Cached data from relid: %u", relid);
+			}
+			else
+			{
+				elog(WARNING, "Invalid scanrelid (0)");
+			}
+
+			num_tuples = vec -> size;
+
             elog(INFO, "PRECOMPUTING FOR table: %s, attribute: %s", table, attribute);
-			elog(INFO, "REASON: attribute index: %d", attr_index);
-			elog(INFO, "REASON: preprocessed_pointers_vec: %d", preprocessed_pointers_vec->data[table_index]);
 			int color_count = 0;
 			char** colors;
 			
@@ -363,11 +366,13 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				ptr_vector_replace(table_pointers->data[table_index], attr_index, (void *)outputArray);
 				ptr_vector_replace(table_prefix_sums->data[table_index], attr_index, (void *)prefix_sums);
 				ptr_vector_replace(table_distinct_colors->data[table_index], attr_index, (void *)color_vector);
+				num_tuples_vec->data[table_index] = num_tuples;
 			} else {
-				ptr_vector_push(table_pointers->data[table_index], (void *)outputArray);
-				ptr_vector_push(table_prefix_sums->data[table_index], (void *)prefix_sums);
-				ptr_vector_push(table_distinct_colors->data[table_index], (void *)color_vector);
-				string_vector_push(table_attributes->data[table_index], attribute);
+				ptr_vector_push(table_pointers->data[table_index], 			(void *)outputArray);
+				ptr_vector_push(table_prefix_sums->data[table_index], 		(void *)prefix_sums);
+				ptr_vector_push(table_distinct_colors->data[table_index], 	(void *)color_vector);
+				string_vector_push(table_attributes->data[table_index], 	attribute);
+				int_vector_push(num_tuples_vec, num_tuples);
 			}
             preprocessed_pointers_vec->data[table_index] = true;
 		}
@@ -375,6 +380,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 			outputArray = (char ***)ptr_vector_get(table_pointers->data[table_index], attr_index);
 			prefix_sums = (int **)ptr_vector_get(table_prefix_sums->data[table_index], attr_index);
 			color_vector = (StringVector *)ptr_vector_get(table_distinct_colors->data[table_index], attr_index);
+			num_tuples = int_vector_get(num_tuples_vec, table_index);
 		}
 
         hash = myhash_create(CurrentMemoryContext, 128, NULL);

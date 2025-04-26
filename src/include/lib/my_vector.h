@@ -54,4 +54,16 @@ void bool_vector_init(BoolVector *vec);
 void bool_vector_push(BoolVector *vec, bool elem);
 bool bool_vector_get(BoolVector *vec, size_t index);
 void bool_vector_free(BoolVector *vec);
+
+typedef struct {
+    int *data;    // Array of `char*` elements
+    size_t size;     // Number of elements
+    size_t capacity; // Allocated capacity
+} IntVector;
+
+// Function prototypes
+void int_vector_init(IntVector *vec);
+void int_vector_push(IntVector *vec, int elem);
+int int_vector_get(IntVector *vec, size_t index);
+void int_vector_free(IntVector *vec);
 #endif

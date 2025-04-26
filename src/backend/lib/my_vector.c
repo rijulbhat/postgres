@@ -135,3 +135,32 @@ bool bool_vector_get(BoolVector *vec, size_t index) {
 void bool_vector_free(BoolVector *vec) {
     free(vec->data);  // Free only the vector storage
 }
+
+// Initialize the vector
+void int_vector_init(IntVector *vec) {
+    vec->data = (int*) malloc(INITIAL_CAPACITY * sizeof(int));
+    vec->size = 0;
+    vec->capacity = INITIAL_CAPACITY;
+}
+
+// Push an already allocated `char*` into the vector
+void int_vector_push(IntVector *vec, int elem) {
+    // Resize if needed
+    if (vec->size == vec->capacity) {
+        vec->capacity *= 2;
+        vec->data = realloc(vec->data, vec->capacity * sizeof(int));
+    }
+    // Store the pointer
+    vec->data[vec->size++] = elem;
+}
+
+// Get a `char*` from the vector
+int int_vector_get(IntVector *vec, size_t index) {
+    if (index >= vec->size) return NULL;
+    return vec->data[index];
+}
+
+// Free the vector (does not free stored `char*` elements)
+void int_vector_free(IntVector *vec) {
+    free(vec->data);  // Free only the vector storage
+}
