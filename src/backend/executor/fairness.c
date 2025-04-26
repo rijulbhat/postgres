@@ -604,12 +604,8 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-				// for(int i = 0;i<10;i++)
-				// {
-				
-
-				// }
-
+				elog(INFO, "epsilon: %d", epsilon);
+				elog(INFO, "UFFFF");
 				output = multicolor_getrange(column_header->data, attribute, vec->natts, subjectToStmt, prefix_sums, l_index, r_index, epsilon);
 
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
@@ -1915,7 +1911,6 @@ Range multicolor_getrange(char **column_headers, char* attribute, int natts, Sub
 	Range fair_range = createRange(-1,-1);
 	int attr_index;
     
-
 	foreach(lc, subjectToStmt->attr_list)  // stmt is your SubjectToStmt*
 	{	
 		AttrWithInto *item = (AttrWithInto *) lfirst(lc);
@@ -1925,14 +1920,12 @@ Range multicolor_getrange(char **column_headers, char* attribute, int natts, Sub
 
 		idx++;
 	}
-
     for (int i = 0; i < num_color; i++)
     {
         MyEntry *entry = NULL;
         entry = myhash_lookup(hash, C[i]);
         color_indices[i] = entry == NULL ? -1 : entry->value;
     }
-    
 	
 	fair_range = createRange(-1, -1);
 	if(start <= 0 || end > num_tuples)
@@ -1940,7 +1933,6 @@ Range multicolor_getrange(char **column_headers, char* attribute, int natts, Sub
 		elog(ERROR, "Invalid range");
 		return createRange(-1,-1);
 	}
-
     attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);    
 
 	// prefix_sums = malloc(num_color * sizeof(int *));
@@ -1966,8 +1958,8 @@ Range multicolor_getrange(char **column_headers, char* attribute, int natts, Sub
 	// 		}
 	// 	}
 	// }
-
 	for(int i = 0; i < num_tuples; i++){
+
 		for (int j = 0; j < num_tuples; j++)
 		{
 			bool is_fair_range = true;
@@ -1998,7 +1990,6 @@ Range multicolor_getrange(char **column_headers, char* attribute, int natts, Sub
 			}
 		}
 	}
-
 	elog(INFO,"Best similarity: %.2f",best_similarity);
 
 	return fair_range;
