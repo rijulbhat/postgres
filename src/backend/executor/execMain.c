@@ -440,7 +440,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 	if (sendTuples){
 		dest->rStartup(dest, operation, queryDesc->tupDesc);
-		column_header = compute_headers(queryDesc);	
+		if(subjectToStmt != NULL){
+			column_header = compute_headers(queryDesc);	
+		}
 	}
 	// elog(INFO,"HIIII");
 	/*
@@ -468,7 +470,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 * processed across multiple ExecutorRun() calls.
 	 */
 	estate->es_total_processed += estate->es_processed;
-	process_query(queryDesc, column_header, subjectToStmt);
+	if (subjectToStmt != NULL){
+		process_query(queryDesc, column_header, subjectToStmt);
+	}
 	/*
 	 * shutdown tuple receiver, if we started it
 	 */
