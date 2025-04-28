@@ -135,3 +135,39 @@ bool bool_vector_get(BoolVector *vec, size_t index) {
 void bool_vector_free(BoolVector *vec) {
     free(vec->data);  // Free only the vector storage
 }
+
+// Initialize the vector
+void int_vector_init(IntVector *vec) {
+    vec->data = (int*) malloc(INITIAL_CAPACITY * sizeof(int));
+    vec->size = 0;
+    vec->capacity = INITIAL_CAPACITY;
+}
+
+// Push an integer into the vector
+void int_vector_push(IntVector *vec, int elem) {
+    // Resize if needed
+    if (vec->size == vec->capacity) {
+        vec->capacity *= 2;
+        vec->data = realloc(vec->data, vec->capacity * sizeof(int));
+    }
+    // Store the element
+    vec->data[vec->size++] = elem;
+}
+
+// Get an integer from the vector
+int int_vector_get(IntVector *vec, size_t index) {
+    if (index >= vec->size) return 0;  // Return 0 if index is out of bounds
+    return vec->data[index];
+}
+
+// Replace an element at a specific index in the vector
+void int_vector_replace(IntVector *vec, size_t index, int elem) {
+    if (index < vec->size) {
+        vec->data[index] = elem;  // Replace the element
+    }
+}
+
+// Free the vector
+void int_vector_free(IntVector *vec) {
+    free(vec->data);  // Free only the vector storage
+}

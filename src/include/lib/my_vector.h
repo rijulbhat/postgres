@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+
 typedef struct {
     char ***data;    // Array of `char**` elements
     size_t size;     // Number of elements
@@ -30,6 +31,7 @@ void string_vector_push(StringVector *vec, char *elem);
 char *string_vector_get(StringVector *vec, size_t index);
 void string_vector_free(StringVector *vec);
 int string_vector_find(StringVector *vec, const char* attribute);
+
 typedef struct {
     void **data;    // Array of `char*` elements
     size_t size;     // Number of elements
@@ -54,4 +56,17 @@ void bool_vector_init(BoolVector *vec);
 void bool_vector_push(BoolVector *vec, bool elem);
 bool bool_vector_get(BoolVector *vec, size_t index);
 void bool_vector_free(BoolVector *vec);
+
+typedef struct {
+    int *data;      // Array of `int` elements
+    size_t size;    // Number of elements
+    size_t capacity; // Allocated capacity
+} IntVector;
+
+// Function prototypes
+void int_vector_init(IntVector *vec);
+void int_vector_push(IntVector *vec, int elem);
+int int_vector_get(IntVector *vec, size_t index);
+void int_vector_free(IntVector *vec);
+
 #endif

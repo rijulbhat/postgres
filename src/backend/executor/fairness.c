@@ -13,13 +13,18 @@
 #define SH_DEFINE
 #include "lib/simplehash.h"
 
+typedef struct IntPair
+{
+    int key1;        
+    int key2;
+} IntPair;
+
 typedef struct Range {
 	int start;
 	int end;
 	bool valid;
 	double similarity;
 } Range;
-
 
 /* RBTree functions - Start */
 
@@ -115,6 +120,7 @@ static PtrVector *table_weighted_pointers;
 static PtrVector *table_prefix_sums;
 static PtrVector *table_distinct_colors;
 static StringVector *tables;
+static IntVector *num_tuples_vec;
 // PtrVector *pointers;
 static MemoryContext weightedPointersContext = NULL;
 static bool reset_table = true;
@@ -143,6 +149,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		table_weighted_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 		table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
 		table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
+		num_tuples_vec = (IntVector *) malloc(sizeof(IntVector));
 		
         string_vector_init(tables);
 		ptr_vector_init(table_pointers);
@@ -155,6 +162,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		ptr_vector_init(table_weighted_pointers);
 		ptr_vector_init(table_LJP);
 		ptr_vector_init(table_RJP);
+		int_vector_init(num_tuples_vec);
 	}
 
 	table = print_table_names_from_query(queryDesc);
@@ -305,32 +313,35 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				}
 			}
 		}
-	
-		scanrelid = scan->scanrelid;
-		vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
-		if (scanrelid > 0)
-		{
-			RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
-			relid = rte->relid;
-			
-			char_ptr_vector_init(vec);
-			store_table_data(relid, vec);
-	
-			// elog(INFO, "Cached data from relid: %u", relid);
-		}
-		else
-		{
-			elog(WARNING, "Invalid scanrelid (0)");
-		}
 
-		sort_attr_index = get_attribute_index(column_header->data, vec->natts, attribute);
-		color_index = get_attribute_index(column_header->data, vec->natts, subjectToStmt->attr);
+		sort_attr_index = get_attribute_index(column_header->data, column_header->natts, attribute);
+		color_index = get_attribute_index(column_header->data, column_header->natts, subjectToStmt->attr);
 		attr_index = string_vector_find(table_attributes->data[table_index], attribute);
 		epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-		num_tuples = vec -> size;
 		MAX_ATTRS = column_header->natts;
 		
 		if(!preprocessed_pointers_vec->data[table_index] || attr_index == -1){
+
+			scanrelid = scan->scanrelid;
+			vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
+			if (scanrelid > 0)
+			{
+				RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
+				relid = rte->relid;
+				
+				char_ptr_vector_init(vec);
+				store_table_data(relid, vec);
+		
+				// elog(INFO, "Cached data from relid: %u", relid);
+			}
+			else
+			{
+				elog(WARNING, "Invalid scanrelid (0)");
+			}
+
+			num_tuples = vec -> size;
+
+
             elog(INFO, "PRECOMPUTING FOR table: %s, attribute: %s", table, attribute);
 			elog(INFO, "REASON: attribute index: %d", attr_index);
 			elog(INFO, "REASON: preprocessed_pointers_vec: %d", preprocessed_pointers_vec->data[table_index]);
@@ -363,11 +374,13 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				ptr_vector_replace(table_pointers->data[table_index], attr_index, (void *)outputArray);
 				ptr_vector_replace(table_prefix_sums->data[table_index], attr_index, (void *)prefix_sums);
 				ptr_vector_replace(table_distinct_colors->data[table_index], attr_index, (void *)color_vector);
+				num_tuples_vec->data[table_index] = num_tuples;
 			} else {
 				ptr_vector_push(table_pointers->data[table_index], (void *)outputArray);
 				ptr_vector_push(table_prefix_sums->data[table_index], (void *)prefix_sums);
 				ptr_vector_push(table_distinct_colors->data[table_index], (void *)color_vector);
 				string_vector_push(table_attributes->data[table_index], attribute);
+				int_vector_push(num_tuples_vec, num_tuples);
 			}
             preprocessed_pointers_vec->data[table_index] = true;
 		}
@@ -375,6 +388,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 			outputArray = (char ***)ptr_vector_get(table_pointers->data[table_index], attr_index);
 			prefix_sums = (int **)ptr_vector_get(table_prefix_sums->data[table_index], attr_index);
 			color_vector = (StringVector *)ptr_vector_get(table_distinct_colors->data[table_index], attr_index);
+			num_tuples = num_tuples_vec->data[table_index];
 		}
 
         hash = myhash_create(CurrentMemoryContext, 128, NULL);
@@ -391,7 +405,6 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
                 entry->value = i;
             }
         }
-        
 
 		l_index = get_upper_value_index(index, bounds[0]) + 1;
 		r_index = get_lower_value_index(index, bounds[1]) + 1;
@@ -449,7 +462,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 					MemoryContext oldContext;
 					bool newinsert;
 
-					buildingpointers_w(column_header->data, attribute, vec->natts, subjectToStmt);
+					buildingpointers_w(column_header->data, attribute, column_header->natts, subjectToStmt);
 					
 					weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
 					
@@ -527,7 +540,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
                         elog(INFO, "BUILDING POINTERS FOR table: %s, attribute: %s AS NEW WEIGHTS ENCOUNTERED", table, attribute);
 						bool newinsert;
 
-						buildingpointers_w(column_header->data, attribute, vec->natts, subjectToStmt);
+						buildingpointers_w(column_header->data, attribute, column_header->natts, subjectToStmt);
 					
 						weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
 						weighted_pointers_node->weight1 = w1;
@@ -567,7 +580,7 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 						prevNegPtr = weighted_pointers_node->prevNegPtr;
 					}
 				}
-				output = getrange(column_header->data, vec->natts, subjectToStmt, l_index, r_index, epsilon);
+				output = getrange(column_header->data, column_header->natts, subjectToStmt, l_index, r_index, epsilon);
 				elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 				
 				if(output.start >= output.end){
@@ -591,14 +604,12 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 				
 
 				// }
-				output = multicolor_getrange(column_header->data, attribute, vec->natts, subjectToStmt, prefix_sums, l_index, r_index, epsilon);
+				output = multicolor_getrange(column_header->data, attribute, column_header->natts, subjectToStmt, prefix_sums, l_index, r_index, epsilon);
 
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				//%jalu writing this, do not hit
 				originalrange = createRange(l_index, r_index);
-				elog(INFO, "HELLO HELLO");
 				recursivebfsoutput = recursivebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
-				elog(INFO, "HELLO HELLO");
 				elog(INFO, "BFSRecursive Fair range: [%d, %d]", recursivebfsoutput.start, recursivebfsoutput.end);
 				//%jalu ending this, do not blame
 
@@ -614,7 +625,6 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 					elog(INFO, "BFS CORRECTED QUERY:");
 					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[recursivebfsoutput.start - 1][index], outputArray[recursivebfsoutput.end - 1][index]);
                 }
-
 			}
 		}
     }
@@ -2119,6 +2129,18 @@ static bool validrange(Range r)
 
 Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix_sums, SubjectToStmt* subjectToStmt)
 {
+	HASHCTL ctl;
+	HTAB *intPairHash;
+	
+	memset(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(IntPair);   /* Size of the key (only key) */
+	ctl.entrysize = sizeof(IntPair); /* Size of entry == size of key */
+
+	intPairHash = hash_create("IntPair Hash Table",
+		128,      /* initial size */
+		&ctl,
+		HASH_ELEM);
+
 	pairingheap *currheap = pairingheap_allocate(heapnode_comparator, NULL);
 	heapnode *first_node = (heapnode *) palloc(sizeof(heapnode));
 	first_node->r = originalrange;
@@ -2142,18 +2164,19 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		
 		maxsimilarity_node = (heapnode *) pairingheap_remove_first(currheap);
 		topsimilarityfair = fairness_check(subjectToStmt, color_vector, prefix_sums, maxsimilarity_node->r.start-1, maxsimilarity_node->r.end-1);
-		elog(INFO, "Range: [%d, %d]", maxsimilarity_node->r.start, maxsimilarity_node->r.end);
-		elog(INFO, "Similarity: %.2f", maxsimilarity_node->similarity);
+		// elog(INFO, "Range: [%d, %d]", maxsimilarity_node->r.start, maxsimilarity_node->r.end);
+		// elog(INFO, "Similarity: %.2f", maxsimilarity_node->similarity);
 		if(topsimilarityfair)
 		{
             if (maxsimilarity_node->similarity > 0){
 			    elog(INFO, "BFSRecursive Best Similarity: %.2f", maxsimilarity_node->similarity);
+				hash_destroy(intPairHash);
 			    return maxsimilarity_node->r;
             }
             else{
+				hash_destroy(intPairHash);
                 return createRange(0, 0);
             }
-
 		}
 
 		topstart = maxsimilarity_node->r.start;
@@ -2173,30 +2196,60 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 			heapnode *new_node1 = (heapnode *) palloc(sizeof(heapnode));
 			new_node1->r = newrange1;
 			new_node1->similarity = jaccordsimilarity(originalrange, newrange1);
-			if(new_node1->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node1);
+			IntPair key = {new_node1->r.start, new_node1->r.end};
+			IntPair *entry;
+			bool found = false;
+			entry = (IntPair *) hash_search(intPairHash,
+											(void *)&key,
+											HASH_ENTER, /* insert if not found */
+											&found);
+			
+			if(new_node1->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node1);
 		}
 		if(validrange(newrange2))
 		{
 			heapnode *new_node2 = (heapnode *) palloc(sizeof(heapnode));
 			new_node2->r = newrange2;
 			new_node2->similarity = jaccordsimilarity(originalrange, newrange2);
-			if(new_node2->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node2);
+			IntPair key = {new_node2->r.start, new_node2->r.end};
+			IntPair *entry;
+			bool found = false;
+			entry = (IntPair *) hash_search(intPairHash,
+											(void *)&key,
+											HASH_ENTER, /* insert if not found */
+											&found);
+			if(new_node2->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node2);
 		}
 		if(validrange(newrange3))
 		{
 			heapnode *new_node3 = (heapnode *) palloc(sizeof(heapnode));
 			new_node3->r = newrange3;
 			new_node3->similarity = jaccordsimilarity(originalrange, newrange3);
-			if(new_node3->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node3);
+			IntPair key = {new_node3->r.start, new_node3->r.end};
+			IntPair *entry;
+			bool found = false;
+			entry = (IntPair *) hash_search(intPairHash,
+											(void *)&key,
+											HASH_ENTER, /* insert if not found */
+											&found);
+			if(new_node3->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node3);
 		}
 		if(validrange(newrange4))
 		{
 			heapnode *new_node4 = (heapnode *) palloc(sizeof(heapnode));
 			new_node4->r = newrange4;
 			new_node4->similarity = jaccordsimilarity(originalrange, newrange4);
-			if(new_node4->similarity < maxsimilarity_node->similarity)pairingheap_add(currheap, (pairingheap_node *) new_node4);
+			IntPair key = {new_node4->r.start, new_node4->r.end};
+			IntPair *entry;
+			bool found = false;
+			entry = (IntPair *) hash_search(intPairHash,
+											(void *)&key,
+											HASH_ENTER, /* insert if not found */
+											&found);
+			if(new_node4->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node4);
 		}
 	}
+	hash_destroy(intPairHash);
 	return createRange(-1, -1);
 }
 
