@@ -2323,7 +2323,9 @@ void insert_val(RBTree *rbt, int key, int value){
 	IntRBNode *foundNode;
 	
 	node.key = key;
+	elog(INFO, "Inserting key: %d, value: %d", key, value);
 	foundNode = (IntRBNode *) rbt_find(rbt, (RBTNode *) &node);
+	elog(INFO, "Found node: %p", foundNode);
 	if(foundNode)
 	{
 		foundNode->values[foundNode->index] = value;
@@ -2332,7 +2334,9 @@ void insert_val(RBTree *rbt, int key, int value){
 	else
 	{
 		bool newinsert;
+		elog(INFO, "Inserting new node with key: %d", key);
 		IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
+		elog(INFO, "New node");
 		newNode->key = key;
 		newNode->values = (int *) palloc(num_tuples * sizeof(int));
 		newNode->values[0] = value;
@@ -2415,13 +2419,16 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	c[num_tuples+1]=0;
 	color[0]=0;
 	color[num_tuples+1]=0;
-	RBTreeIterator *iter;
-	iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
-	IntRBNode *search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
-	for (int i = 0; i < num_tuples+1; i++){
-		elog(INFO, "color[%d]:%d", i, color[i]);
-		IntRBNode *node;
 
+	PtrVector *nodes_to_delete = (PtrVector *) malloc(sizeof(PtrVector));
+	ptr_vector_init(nodes_to_delete);
+	RBTreeIterator *iter;
+	IntRBNode *node;
+	node = (IntRBNode *) palloc(sizeof(IntRBNode));
+	iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
+	IntRBNode* search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
+	for (int i = 0; i < num_tuples+1; i++){
+		elog(INFO, "color[%d]: %d", i, color[i]);
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -2431,7 +2438,6 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 			}
 			c[i] = cumulative;
 		}	
-
 		rbt_begin_iterate(fwdPosBST, LeftRightWalk, iter);
 		node = (IntRBNode *) rbt_iterate(iter);
 		while (node && node->key < c[i]) {
@@ -2439,18 +2445,46 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				fwdPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+		for(int i = 0; i < nodes_to_delete->size; i++)
+		{
+			elog(INFO, "REACHED HERE4");
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
+			rbt_delete(fwdPosBST, (RBTNode *) node_to_delete);
+			elog(INFO, "REACHED HERE5");
+
+		}
+		elog(INFO, "REACHED HERE1");
+		nodes_to_delete->size = 0;
+		elog(INFO, "REACHED HERE2");
 		search_node->key = c[i];
+		elog(INFO, "REACHED HERE2.2");
 		node = (IntRBNode*) rbt_find_great(fwdNegBST, (RBTNode*) search_node, 0);
+		elog(INFO, "REACHED HERE2.3");
 		rbt_begin_iterate_from(fwdNegBST, LeftRightWalk, iter, (RBTNode*) node);
+		elog(INFO, "REACHED HERE2.4");
 		while (node) {
 			for (int j = node->start; j < node->index; j++) {
 				fwdNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+		elog(INFO, "REACHED HERE3");
+
+		for(int i = 0; i < nodes_to_delete->size; i++)
+		{
+			elog(INFO, "REACHED HERE6");
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
+			rbt_delete(fwdPosBST, (RBTNode *) node_to_delete);
+			elog(INFO, "REACHED HERE7");
+		}
+
+		nodes_to_delete->size = 0;
+		
 		insert_val(fwdPosBST, c[i], i);
 		insert_val(fwdNegBST, c[i], i);
 
@@ -2485,8 +2519,6 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	}
 
 	for(int i = num_tuples+1; i >=1; i--) {
-		elog(INFO, "color[%d]:%d", i, color[i]);
-		IntRBNode *node;
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -2503,8 +2535,18 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				prevPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+
+		for(int i = 0; i < nodes_to_delete->size; i++)
+		{
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
+			rbt_delete(prevPosBST, (RBTNode *) node_to_delete);
+		}
+
+		nodes_to_delete->size = 0;
+		
 		search_node->key = c[i];
 		node = (IntRBNode*) rbt_find_great(prevNegBST, (RBTNode*) search_node, 0);
 		rbt_begin_iterate_from(prevNegBST, LeftRightWalk, iter, (RBTNode*) node);
@@ -2513,8 +2555,17 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				prevNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+
+		for(int i = 0; i < nodes_to_delete->size; i++)
+		{
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
+			rbt_delete(prevPosBST, (RBTNode *) node_to_delete);
+		}
+		
+		nodes_to_delete->size = 0;
 		
 		insert_val(prevPosBST, c[i], i);
 		insert_val(prevNegBST, c[i], i);
@@ -2522,8 +2573,6 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 
 	pfree(prevPosBST);
 	pfree(prevNegBST);
-	pfree(search_node);
-	pfree(iter);
 
 	// for(int i = 0; i < num_tuples+2; i++) 
 	// {
