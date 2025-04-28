@@ -72,7 +72,7 @@ typedef struct MyEntry {
 
 
 StringVector* compute_headers(QueryDesc* queryDesc);
-void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToStmt* subjectToStmt);
+void process_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt);
 // bool reset_outputArrays = true;
 // bool built_pointers = false;
 

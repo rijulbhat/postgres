@@ -102,6 +102,7 @@ char **compute_distinct_colors(int num_tuples, int color_index, int *color_count
 int get_lower_value_index(int index, float value);
 int get_upper_value_index(int index, float value);
 void store_table_data(Oid relid, CharPtrVector *vec);
+void store_table_headers(Oid relid, StringVector *headers);
 bool is_scan_node(Node *node);
 bool is_binary_attr(CharPtrVector* vec, int index);
 
@@ -130,10 +131,11 @@ static int sort_attr_index = 0;
 static int color_index = 0;
 static myhash_hash *hash;
 
-void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToStmt* subjectToStmt){
+void process_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
     int epsilon;
 	const char* table;
 	int table_index;
+	StringVector *column_header;
 
     if(reset_table){
 		elog(INFO, "Resetting tables");
@@ -281,7 +283,22 @@ void process_query(QueryDesc* queryDesc, StringVector* column_header, SubjectToS
 		{
 			elog(ERROR, "qualList has only one element, which is not allowed");
 		}
-		
+
+		scanrelid = scan->scanrelid;
+		column_header = (StringVector *) malloc(sizeof(StringVector));
+		if (scanrelid > 0)
+		{
+			RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
+			relid = rte->relid;
+			
+			string_vector_init(column_header);
+			store_table_headers(relid, column_header);
+		}
+		else
+		{
+			elog(WARNING, "Invalid scanrelid (0)");
+		}
+
 		foreach(lc, qualList)
 		{
 			Node *node = (Node *) lfirst(lc);
@@ -2062,53 +2079,76 @@ is_scan_node(Node *node)
 
 void store_table_data(Oid relid, CharPtrVector *vec)
 {
-    Relation rel;
-    TableScanDesc scan;
-    HeapTuple tuple;
-    TupleDesc tupdesc;
+	Relation rel;
+	TableScanDesc scan;
+	HeapTuple tuple;
+	TupleDesc tupdesc;
 
-    rel = table_open(relid, AccessShareLock);
-    tupdesc = RelationGetDescr(rel);
-    vec->natts = tupdesc->natts;
+	rel = table_open(relid, AccessShareLock);
+	tupdesc = RelationGetDescr(rel);
+	vec->natts = tupdesc->natts;
 
-    scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+	scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
 
-    while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
-    {
-        char **row = (char **) palloc(sizeof(char *) * tupdesc->natts);
-        bool isnull;
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		char **row = (char **) palloc(sizeof(char *) * tupdesc->natts);
+		bool isnull;
 
-        for (int i = 0; i < tupdesc->natts; i++)
-        {	
+		for (int i = 0; i < tupdesc->natts; i++)
+		{	
 			Datum val;
-            if (TupleDescAttr(tupdesc, i)->attisdropped)
-            {
-                row[i] = NULL;
-                continue;
-            }
+			if (TupleDescAttr(tupdesc, i)->attisdropped)
+			{
+				row[i] = NULL;
+				continue;
+			}
 
-        	val = heap_getattr(tuple, i + 1, tupdesc, &isnull);
-            if (isnull)
-            {
-                row[i] = NULL;
-            }
-            else
-            {
-                Oid typoutput;
-                bool typIsVarlena;
-                char *str;
+			val = heap_getattr(tuple, i + 1, tupdesc, &isnull);
+			if (isnull)
+			{
+				row[i] = NULL;
+			}
+			else
+			{
+				Oid typoutput;
+				bool typIsVarlena;
+				char *str;
 
-                getTypeOutputInfo(TupleDescAttr(tupdesc, i)->atttypid, &typoutput, &typIsVarlena);
-                str = OidOutputFunctionCall(typoutput, val);
-                row[i] = pstrdup(str); // Make sure it lives in PostgreSQL memory context
-            }
-        }
+				getTypeOutputInfo(TupleDescAttr(tupdesc, i)->atttypid, &typoutput, &typIsVarlena);
+				str = OidOutputFunctionCall(typoutput, val);
+				row[i] = pstrdup(str); // Make sure it lives in PostgreSQL memory context
+			}
+		}
 
-        char_ptr_vector_push(vec, row);
-    }
+		char_ptr_vector_push(vec, row);
+	}
 
-    table_endscan(scan);
-    table_close(rel, AccessShareLock);
+	table_endscan(scan);
+	table_close(rel, AccessShareLock);
+}
+
+void store_table_headers(Oid relid, StringVector *headers)
+{
+	Relation rel;
+	TupleDesc tupdesc;
+
+	rel = table_open(relid, AccessShareLock);
+	tupdesc = RelationGetDescr(rel);
+	headers->natts = tupdesc->natts;
+
+	for (int i = 0; i < tupdesc->natts; i++)
+	{
+		// if (TupleDescAttr(tupdesc, i)->attisdropped)
+		// {
+		// 	continue;
+		// }
+
+		char *header = pstrdup(NameStr(TupleDescAttr(tupdesc, i)->attname));
+		string_vector_push(headers, header);
+	}
+
+	table_close(rel, AccessShareLock);
 }
 
 static bool validrange(Range r)
