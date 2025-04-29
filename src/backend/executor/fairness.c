@@ -173,7 +173,6 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 		table_index = string_vector_find(tables, table);
 
 		if (table_index == -1){
-			elog(INFO, "Table not found, creating new table");
 			
 			PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 			StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
@@ -183,8 +182,9 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 			PtrVector *new_table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
 			PtrVector *new_table_weighted_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 
-			string_vector_push(tables, table);
+			elog(INFO, "Table not found, creating new table");
 
+			string_vector_push(tables, table);
 			bool_vector_push(built_pointers_vec, 		false);
             bool_vector_push(preprocessed_pointers_vec, false);
 			bool_vector_push(reset_outputArrays_vec, 	true);
@@ -332,6 +332,8 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 		MAX_ATTRS = column_header->natts;
 		
 		if(!preprocessed_pointers_vec->data[table_index] || attr_index == -1){
+			int color_count = 0;
+			char** colors;
 
 			scanrelid = scan->scanrelid;
 			vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
@@ -356,8 +358,6 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
             elog(INFO, "PRECOMPUTING FOR table: %s, attribute: %s", table, attribute);
 			elog(INFO, "REASON: attribute index: %d", attr_index);
 			elog(INFO, "REASON: preprocessed_pointers_vec: %d", preprocessed_pointers_vec->data[table_index]);
-			int color_count = 0;
-			char** colors;
 			
 			outputArray = (char ***)malloc(vec->size * sizeof(char **));
 						
@@ -469,9 +469,9 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 				}
 
 				if(!built_pointers_vec->data[table_index] || attr_index == -1){
-                    elog(INFO, "BUILDING POINTERS FOR table: %s, attribute: %s", table, attribute);
 					MemoryContext oldContext;
 					bool newinsert;
+                    elog(INFO, "BUILDING POINTERS FOR table: %s, attribute: %s", table, attribute);
 
 					buildingpointers_w(column_header->data, attribute, column_header->natts, subjectToStmt);
 					
@@ -1909,6 +1909,7 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 
 Range multicolor_getrange(char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int **prefix_sums, int start, int end, int epsilon)
 {
+	elog(INFO, "Inside multicolor_getrange");
 	int num_color = list_length(subjectToStmt->attr_list);
 	int *weights = malloc(num_color * sizeof(int));
 	char **C = malloc(num_color * sizeof(char *));
@@ -2165,6 +2166,8 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 {
 	HASHCTL ctl;
 	HTAB *intPairHash;
+	pairingheap *currheap;
+	heapnode *first_node;
 	
 	memset(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(IntPair);   /* Size of the key (only key) */
@@ -2175,8 +2178,8 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		&ctl,
 		HASH_ELEM);
 
-	pairingheap *currheap = pairingheap_allocate(heapnode_comparator, NULL);
-	heapnode *first_node = (heapnode *) palloc(sizeof(heapnode));
+	currheap = pairingheap_allocate(heapnode_comparator, NULL);
+	first_node = (heapnode *) palloc(sizeof(heapnode));
 	first_node->r = originalrange;
 	first_node->similarity = jaccordsimilarity(originalrange, originalrange);
 	pairingheap_add(currheap, (pairingheap_node *) first_node);	
@@ -2227,13 +2230,12 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 
 		if(validrange(newrange1))
 		{
+			bool found = false;
+			IntPair key = {newrange1.start, newrange1.end};
 			heapnode *new_node1 = (heapnode *) palloc(sizeof(heapnode));
 			new_node1->r = newrange1;
 			new_node1->similarity = jaccordsimilarity(originalrange, newrange1);
-			IntPair key = {new_node1->r.start, new_node1->r.end};
-			IntPair *entry;
-			bool found = false;
-			entry = (IntPair *) hash_search(intPairHash,
+			(IntPair *) hash_search(intPairHash,
 											(void *)&key,
 											HASH_ENTER, /* insert if not found */
 											&found);
@@ -2242,13 +2244,12 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		}
 		if(validrange(newrange2))
 		{
+			bool found = false;
+			IntPair key = {newrange2.start, newrange2.end};
 			heapnode *new_node2 = (heapnode *) palloc(sizeof(heapnode));
 			new_node2->r = newrange2;
 			new_node2->similarity = jaccordsimilarity(originalrange, newrange2);
-			IntPair key = {new_node2->r.start, new_node2->r.end};
-			IntPair *entry;
-			bool found = false;
-			entry = (IntPair *) hash_search(intPairHash,
+			(IntPair *) hash_search(intPairHash,
 											(void *)&key,
 											HASH_ENTER, /* insert if not found */
 											&found);
@@ -2256,13 +2257,12 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		}
 		if(validrange(newrange3))
 		{
+			bool found = false;
+			IntPair key = {newrange3.start, newrange3.end};
 			heapnode *new_node3 = (heapnode *) palloc(sizeof(heapnode));
 			new_node3->r = newrange3;
 			new_node3->similarity = jaccordsimilarity(originalrange, newrange3);
-			IntPair key = {new_node3->r.start, new_node3->r.end};
-			IntPair *entry;
-			bool found = false;
-			entry = (IntPair *) hash_search(intPairHash,
+			(IntPair *) hash_search(intPairHash,
 											(void *)&key,
 											HASH_ENTER, /* insert if not found */
 											&found);
@@ -2270,13 +2270,12 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		}
 		if(validrange(newrange4))
 		{
+			bool found = false;
+			IntPair key = {newrange4.start, newrange4.end};
 			heapnode *new_node4 = (heapnode *) palloc(sizeof(heapnode));
 			new_node4->r = newrange4;
 			new_node4->similarity = jaccordsimilarity(originalrange, newrange4);
-			IntPair key = {new_node4->r.start, new_node4->r.end};
-			IntPair *entry;
-			bool found = false;
-			entry = (IntPair *) hash_search(intPairHash,
+			(IntPair *) hash_search(intPairHash,
 											(void *)&key,
 											HASH_ENTER, /* insert if not found */
 											&found);
@@ -2351,6 +2350,9 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	char* feature1, *feature2;
 	RBTree *fwdPosBST, *fwdNegBST, *prevPosBST, *prevNegBST;
 	AttrWithInto *item0, *item1;
+	PtrVector *nodes_to_delete;
+	RBTreeIterator *iter;
+	IntRBNode *search_node;
 	
 	elog(INFO, "Preprocessing buildpointer with weights for the Given Query");
 	sort_attr_index = get_attribute_index(column_headers, natts, attribute);
@@ -2409,9 +2411,12 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	c[num_tuples+1]=0;
 	color[0]=0;
 	color[num_tuples+1]=0;
-	RBTreeIterator *iter;
+
+	nodes_to_delete = (PtrVector *) malloc(sizeof(PtrVector));
+	ptr_vector_init(nodes_to_delete);
 	iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
-	IntRBNode *search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
+	search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
+
 	for (int i = 0; i < num_tuples+1; i++){
 		// elog(INFO, "color[%d]:%d", i, color[i]);
 		IntRBNode *node;
@@ -2426,6 +2431,7 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 			c[i] = cumulative;
 		}	
 
+		// Finding all nodes in fwdPosBST with keys less than the current cumulative sum
 		rbt_begin_iterate(fwdPosBST, LeftRightWalk, iter);
 		node = (IntRBNode *) rbt_iterate(iter);
 		while (node && node->key < c[i]) {
@@ -2433,21 +2439,40 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				fwdPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+
+		// Deleting all the nodes in fwdPosBST with keys less than the current cumulative sum
+		for(int j = 0; j < nodes_to_delete->size; j++) {
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, j);
+			rbt_delete(fwdPosBST, (RBTNode *) node_to_delete);
+		}
+		nodes_to_delete->size = 0;
+
+		// Finding all nodes in fwdNegBST with keys less than the current cumulative sum
 		search_node->key = c[i];
 		node = (IntRBNode*) rbt_find_great(fwdNegBST, (RBTNode*) search_node, 0);
 		rbt_begin_iterate_from(fwdNegBST, LeftRightWalk, iter, (RBTNode*) node);
-		while (node) {
+		while (node && node->key > c[i]) {
 			for (int j = node->start; j < node->index; j++) {
 				fwdNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+
+		// Deleting all the nodes in fwdNegBST with keys less than the current cumulative sum
+		for(int j = 0; j < nodes_to_delete->size; j++) {
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, j);
+			rbt_delete(fwdNegBST, (RBTNode *) node_to_delete);
+		}
+		nodes_to_delete->size = 0;
+		
+		// Inserting the current (cumulative, index) into the BST
 		insert_val(fwdPosBST, c[i], i);
 		insert_val(fwdNegBST, c[i], i);
-
 	}
 
 	pfree(fwdPosBST);
@@ -2489,7 +2514,9 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				cumulative += w1;
 			}
 			c[i] = cumulative;
-		}	
+		}
+		
+		// Finding all nodes in prevPosBST with keys less than the current cumulative sum
 		rbt_begin_iterate(prevPosBST, LeftRightWalk, iter);
 		node = (IntRBNode *) rbt_iterate(iter);
 		while (node && node->key < c[i]) {
@@ -2497,19 +2524,38 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				prevPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+
+		// Deleting all the nodes in prevPosBST with keys less than the current cumulative sum
+		for(int j = 0; j < nodes_to_delete->size; j++) {
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, j);
+			rbt_delete(prevPosBST, (RBTNode *) node_to_delete);
+		}
+		nodes_to_delete->size = 0;
+		
+		// Finding all nodes in prevNegBST with keys less than the current cumulative sum
 		search_node->key = c[i];
 		node = (IntRBNode*) rbt_find_great(prevNegBST, (RBTNode*) search_node, 0);
 		rbt_begin_iterate_from(prevNegBST, LeftRightWalk, iter, (RBTNode*) node);
-		while (node) {
+		while (node && node->key > c[i]) {
 			for (int j = node->start; j < node->index; j++) {
 				prevNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
+			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
+
+		// Deleting all the nodes in prevNegBST with keys less than the current cumulative sum
+		for(int j = 0; j < nodes_to_delete->size; j++) {
+			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, j);
+			rbt_delete(prevNegBST, (RBTNode *) node_to_delete);
+		}
+		nodes_to_delete->size = 0;
 		
+		// Inserting the current (cumulative, index) into the BST
 		insert_val(prevPosBST, c[i], i);
 		insert_val(prevNegBST, c[i], i);
 	}

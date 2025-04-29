@@ -1,3 +1,5 @@
+/* ----- src/include/lib/my_vector.h ------ */
+
 #ifndef CHAR_PTR_VECTOR_H
 #define CHAR_PTR_VECTOR_H
 

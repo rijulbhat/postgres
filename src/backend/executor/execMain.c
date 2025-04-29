@@ -396,7 +396,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	bool		sendTuples;
 	MemoryContext oldcontext;
 	SubjectToStmt* subjectToStmt;
-	StringVector *column_header;
+
 	/* sanity checks */
 	Assert(queryDesc != NULL);
 

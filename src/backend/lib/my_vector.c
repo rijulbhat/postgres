@@ -1,3 +1,5 @@
+/* ----- src/backend/lib/my_vector.c ------ */
+
 #include "lib/my_vector.h"
 #include <string.h>
 
@@ -161,11 +163,11 @@ int int_vector_get(IntVector *vec, size_t index) {
 }
 
 // Replace an element at a specific index in the vector
-void int_vector_replace(IntVector *vec, size_t index, int elem) {
-    if (index < vec->size) {
-        vec->data[index] = elem;  // Replace the element
-    }
-}
+// void int_vector_replace(IntVector *vec, size_t index, int elem) {
+//     if (index < vec->size) {
+//         vec->data[index] = elem;  // Replace the element
+//     }
+// }
 
 // Free the vector
 void int_vector_free(IntVector *vec) {
