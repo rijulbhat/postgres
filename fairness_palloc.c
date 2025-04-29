@@ -124,6 +124,7 @@ static StringVector *tables;
 static IntVector *num_tuples_vec;
 // PtrVector *pointers;
 static MemoryContext weightedPointersContext = NULL;
+static MemoryContext oldContext = NULL;
 static bool reset_table = true;
 static int num_tuples = 0;
 static int MAX_ATTRS = 0;
@@ -132,26 +133,38 @@ static int color_index = 0;
 static myhash_hash *hash;
 
 void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
+	elog(INFO,"HI1");
     int epsilon;
 	const char* table;
 	int table_index;
 	StringVector *column_header;
+	elog(INFO,"HI1");
 
     if(reset_table){
-		elog(INFO, "Resetting tables");
 		reset_table = false;
-		tables = (StringVector *) malloc(sizeof(StringVector));
-		table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
-		table_distinct_colors = (PtrVector *) malloc(sizeof(PtrVector));
-		table_prefix_sums = (PtrVector *) malloc(sizeof(PtrVector));
-		table_attributes = (PtrVector *) malloc(sizeof(PtrVector));
-		reset_outputArrays_vec = (BoolVector *) malloc(sizeof(BoolVector));
-		built_pointers_vec = (BoolVector *) malloc(sizeof(BoolVector));
-        preprocessed_pointers_vec = (BoolVector *) malloc(sizeof(BoolVector));
-		table_weighted_pointers = (PtrVector *) malloc(sizeof(PtrVector));
-		table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
-		table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
-		num_tuples_vec = (IntVector *) malloc(sizeof(IntVector));
+
+		if (weightedPointersContext == NULL) {
+			weightedPointersContext = AllocSetContextCreate(
+				TopMemoryContext,         // Use this for global/session-lifetime allocations
+				"MySessionMemoryContext",
+				ALLOCSET_DEFAULT_SIZES
+			);
+		}
+
+		oldContext = MemoryContextSwitchTo(weightedPointersContext);
+		
+		tables = (StringVector *) palloc(sizeof(StringVector));
+		table_pointers = (PtrVector *) palloc(sizeof(PtrVector));
+		table_distinct_colors = (PtrVector *) palloc(sizeof(PtrVector));
+		table_prefix_sums = (PtrVector *) palloc(sizeof(PtrVector));
+		table_attributes = (PtrVector *) palloc(sizeof(PtrVector));
+		reset_outputArrays_vec = (BoolVector *) palloc(sizeof(BoolVector));
+		built_pointers_vec = (BoolVector *) palloc(sizeof(BoolVector));
+        preprocessed_pointers_vec = (BoolVector *) palloc(sizeof(BoolVector));
+		table_weighted_pointers = (PtrVector *) palloc(sizeof(PtrVector));
+		table_LJP = (PtrVector *) palloc(sizeof(PtrVector));
+		table_RJP = (PtrVector *) palloc(sizeof(PtrVector));
+		num_tuples_vec = (IntVector *) palloc(sizeof(IntVector));
 		
         string_vector_init(tables);
 		ptr_vector_init(table_pointers);
@@ -165,29 +178,33 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 		ptr_vector_init(table_LJP);
 		ptr_vector_init(table_RJP);
 		int_vector_init(num_tuples_vec);
+
+		MemoryContextSwitchTo(oldContext);
+
 	}
+	elog(INFO,"HI1");
 
 	table = print_table_names_from_query(queryDesc);
 	table_index = -1;
+	elog(INFO,"HI1");
 	
 	if(table){
+		elog(INFO,"HI1");
 		table_index = string_vector_find(tables, table);
+		elog(INFO,"HI1");
 
 		if (table_index == -1){
 			elog(INFO, "Table not found, creating new table");
-			elog(INFO, "Number of tables already seen: %s", table);
-			for (int i = 0; i < tables->size; i++)
-			{
-				elog(INFO, "Table %d: %s", i, tables->data[i]);
-			}
 			
-			PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
-			StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
-			PtrVector *new_table_prefix_sums = (PtrVector *) malloc(sizeof(PtrVector));
-			PtrVector *new_table_distinct_colors = (PtrVector *) malloc(sizeof(PtrVector));
-			PtrVector *new_table_LJP = (PtrVector *) malloc(sizeof(PtrVector));
-			PtrVector *new_table_RJP = (PtrVector *) malloc(sizeof(PtrVector));
-			PtrVector *new_table_weighted_pointers = (PtrVector *) malloc(sizeof(PtrVector));
+			oldContext = MemoryContextSwitchTo(weightedPointersContext);
+
+			PtrVector *new_table_pointers = (PtrVector *) palloc(sizeof(PtrVector));
+			StringVector *new_table_attributes = (StringVector *) palloc(sizeof(StringVector));
+			PtrVector *new_table_prefix_sums = (PtrVector *) palloc(sizeof(PtrVector));
+			PtrVector *new_table_distinct_colors = (PtrVector *) palloc(sizeof(PtrVector));
+			PtrVector *new_table_LJP = (PtrVector *) palloc(sizeof(PtrVector));
+			PtrVector *new_table_RJP = (PtrVector *) palloc(sizeof(PtrVector));
+			PtrVector *new_table_weighted_pointers = (PtrVector *) palloc(sizeof(PtrVector));
 
 			string_vector_push(tables, table);
 
@@ -202,6 +219,8 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 			ptr_vector_init(new_table_LJP);
 			ptr_vector_init(new_table_RJP);
 			ptr_vector_init(new_table_weighted_pointers);
+
+			MemoryContextSwitchTo(oldContext);
 
 			ptr_vector_push(table_pointers, 		 (void *)new_table_pointers);
 			ptr_vector_push(table_attributes, 		 (void *)new_table_attributes);
@@ -218,7 +237,7 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 			}
 		}
 	}
-	// elog(INFO,"HI2");
+	elog(INFO,"HI2");
 	if (queryDesc->operation == CMD_INSERT || queryDesc->operation == CMD_UPDATE || queryDesc->operation == CMD_MERGE || queryDesc->operation == CMD_DELETE){
 		built_pointers_vec->data[table_index] = false;
         preprocessed_pointers_vec->data[table_index] = false;
@@ -244,13 +263,17 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 		bool fair;
 
 		if(reset_outputArrays_vec->data[table_index]){
-			table_pointers->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
-			table_attributes->data[table_index] = (StringVector *) malloc(sizeof(StringVector));
-			table_prefix_sums->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
-			table_distinct_colors->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
-			table_LJP->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
-			table_RJP->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
-			table_weighted_pointers->data[table_index] = (PtrVector *) malloc(sizeof(PtrVector));
+			
+			oldContext = MemoryContextSwitchTo(weightedPointersContext);
+			
+			table_pointers->data[table_index] = (PtrVector *) palloc(sizeof(PtrVector));
+			table_attributes->data[table_index] = (StringVector *) palloc(sizeof(StringVector));
+			table_prefix_sums->data[table_index] = (PtrVector *) palloc(sizeof(PtrVector));
+			table_distinct_colors->data[table_index] = (PtrVector *) palloc(sizeof(PtrVector));
+			table_LJP->data[table_index] = (PtrVector *) palloc(sizeof(PtrVector));
+			table_RJP->data[table_index] = (PtrVector *) palloc(sizeof(PtrVector));
+			table_weighted_pointers->data[table_index] = (PtrVector *) palloc(sizeof(PtrVector));
+
 
 			ptr_vector_init(table_pointers->data[table_index]);
 			string_vector_init(table_attributes->data[table_index]);
@@ -259,6 +282,9 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 			ptr_vector_init(table_LJP->data[table_index]);
 			ptr_vector_init(table_RJP->data[table_index]);
 			ptr_vector_init(table_weighted_pointers->data[table_index]);
+
+			MemoryContextSwitchTo(oldContext);
+
 
 			reset_outputArrays_vec->data[table_index] = false;
 		}
@@ -285,7 +311,7 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 		}
 
 		scanrelid = scan->scanrelid;
-		column_header = (StringVector *) malloc(sizeof(StringVector));
+		column_header = (StringVector *) palloc(sizeof(StringVector));
 		if (scanrelid > 0)
 		{
 			RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
@@ -340,7 +366,7 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 		if(!preprocessed_pointers_vec->data[table_index] || attr_index == -1){
 
 			scanrelid = scan->scanrelid;
-			vec = (CharPtrVector *) malloc(sizeof(CharPtrVector));
+			vec = (CharPtrVector *) palloc(sizeof(CharPtrVector));
 			if (scanrelid > 0)
 			{
 				RangeTblEntry *rte = rt_fetch(scanrelid, queryDesc->estate->es_range_table);
@@ -365,25 +391,32 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 			int color_count = 0;
 			char** colors;
 			
-			outputArray = (char ***)malloc(vec->size * sizeof(char **));
-						
-			// elog(INFO, "Output vector size: %d", vec->size);
+			oldContext = MemoryContextSwitchTo(weightedPointersContext);
+
+			outputArray = (char ***)palloc(vec->size * sizeof(char **));
+			
+			elog(INFO, "Output vector size: %d", vec->size);
 			for (int i = 0; i < vec->size; i++) {
-				outputArray[i] = (char **)malloc(vec->natts * sizeof(char *));
+				outputArray[i] = (char **)palloc(vec->natts * sizeof(char *));
 				for (int j = 0; j < vec->natts; j++) {
-					outputArray[i][j] = strdup(vec->data[i][j]);
+					outputArray[i][j] = pstrdup(vec->data[i][j]);
 				}
 			}
+			elog(INFO, "Output vector size: %d", vec->size);
 
 			merge_sort(0, num_tuples - 1, sort_attr_index);
 
+			elog(INFO, "Output vector size: %d", vec->size);
+
 			colors = compute_distinct_colors(num_tuples, color_index, &color_count);
 
-			color_vector = (StringVector *) malloc(sizeof(StringVector));
+			color_vector = (StringVector *) palloc(sizeof(StringVector));
 			string_vector_init(color_vector);
 			for (int i = 0; i < color_count; i++) {
 				string_vector_push(color_vector, colors[i]);
 			}
+
+			MemoryContextSwitchTo(oldContext);
             
 			prefix_sums = compute_prefix_sums(num_tuples, colors, color_count, color_index);
 
@@ -476,12 +509,14 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 
 				if(!built_pointers_vec->data[table_index] || attr_index == -1){
                     elog(INFO, "BUILDING POINTERS FOR table: %s, attribute: %s", table, attribute);
-					MemoryContext oldContext;
+					oldContext;
 					bool newinsert;
 
 					buildingpointers_w(column_header->data, attribute, column_header->natts, subjectToStmt);
 					
-					weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
+					oldContext = MemoryContextSwitchTo(weightedPointersContext);
+					
+					weighted_pointers_node = (WeightedPointersRBNode *) palloc(sizeof(WeightedPointersRBNode));
 					
 					weighted_pointers_node->weight1 = w1;
 					weighted_pointers_node->weight2 = w2;
@@ -499,16 +534,6 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 						weighted_pointers_node->prevPosPtr = prevPosPtr;
 					}
 					// elog(INFO, "Built pointers");	
-					if (weightedPointersContext == NULL) {
-						weightedPointersContext = AllocSetContextCreate(
-							TopMemoryContext,         // Use this for global/session-lifetime allocations
-							"MySessionMemoryContext",
-							ALLOCSET_DEFAULT_SIZES
-						);
-					}
-					
-					oldContext = MemoryContextSwitchTo(weightedPointersContext);
-
 					// Perform operations within the new memory context
 
 					rbt = rbt_create(sizeof(WeightedPointersRBNode),   /* Node size */
@@ -546,7 +571,7 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 					// LJP = (int *)ptr_vector_get(table_LJP->data[table_index], attr_index);
 					// RJP = (int *)ptr_vector_get(table_RJP->data[table_index], attr_index);
 					
-					WeightedPointersRBNode* node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
+					WeightedPointersRBNode* node = (WeightedPointersRBNode *) palloc(sizeof(WeightedPointersRBNode));
 					rbt = (RBTree *)ptr_vector_get(table_weighted_pointers->data[table_index], attr_index);
 					
 					node->weight1 = w1;
@@ -558,8 +583,11 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 						bool newinsert;
 
 						buildingpointers_w(column_header->data, attribute, column_header->natts, subjectToStmt);
-					
-						weighted_pointers_node = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
+						
+						oldContext = MemoryContextSwitchTo(weightedPointersContext);
+						weighted_pointers_node = (WeightedPointersRBNode *) palloc(sizeof(WeightedPointersRBNode));
+						MemoryContextSwitchTo(oldContext);
+
 						weighted_pointers_node->weight1 = w1;
 						weighted_pointers_node->weight2 = w2;
 						
@@ -655,13 +683,13 @@ StringVector* compute_headers(QueryDesc* queryDesc){
     {
         // if (queryDesc->plannedstmt->subjectClause != NULL){
         // elog(INFO, "Header init");
-        column_header = (StringVector *) malloc(sizeof(StringVector));
+        column_header = (StringVector *) palloc(sizeof(StringVector));
         string_vector_init(column_header);
         column_header->natts = queryDesc->tupDesc->natts;
         for (int i = 0; i < column_header->natts; i++)
         {
             Form_pg_attribute att = TupleDescAttr(queryDesc->tupDesc, i);
-            attribute = (char *)malloc((strlen(NameStr(att->attname)) + 1) * sizeof(char));
+            attribute = (char *)palloc((strlen(NameStr(att->attname)) + 1) * sizeof(char));
             strcpy(attribute, NameStr(att->attname));
             string_vector_push(column_header, attribute);
         }	
@@ -1015,15 +1043,19 @@ void merge(int left, int mid, int right, int attr_index) {
     int n1 = mid - left + 1;
     int n2 = right - mid;
 	int i, j, k;
-    char ***L = (char ***)malloc(n1 * sizeof(char **));
-    char ***R = (char ***)malloc(n2 * sizeof(char **));
+	elog(INFO, "Merging %d and %d", n1, n2);
+    char ***L = (char ***)palloc(n1 * sizeof(char **));
+    char ***R = (char ***)palloc(n2 * sizeof(char **));
+	elog(INFO, "Merging %d and %d", n1, n2);
     
 	for (i = 0; i < n1; i++) {
-        L[i] = (char **)malloc(MAX_ATTRS * sizeof(char *));
+        L[i] = (char **)palloc(MAX_ATTRS * sizeof(char *));
     }
     for (i = 0; i < n2; i++) {
-        R[i] = (char **)malloc(MAX_ATTRS * sizeof(char *));
+        R[i] = (char **)palloc(MAX_ATTRS * sizeof(char *));
     }
+
+	elog(INFO, "Merging %d and %d", n1, n2);
 
     for (i = 0; i < n1; i++)
         for (j = 0; j < MAX_ATTRS; j++){
@@ -1063,13 +1095,13 @@ void merge(int left, int mid, int right, int attr_index) {
     }
 
     for (i = 0; i < n1; i++) {
-        free(L[i]);
+        pfree(L[i]);
     }
     for (i = 0; i < n2; i++) {
-        free(R[i]);
+        pfree(R[i]);
     }
-    free(L);
-    free(R);	
+    pfree(L);
+    pfree(R);	
 }
 
 void merge_sort(int left, int right, int attr_index) {
@@ -1104,9 +1136,9 @@ char **compute_distinct_colors(int num_tuples, int color_index, int *color_count
 }
 
 int **compute_prefix_sums(int num_tuples, char **distinct_colors, int color_count, int color_index) {
-	int **prefix_sums = (int **) malloc(color_count * sizeof(int *));
+	int **prefix_sums = (int **) palloc(color_count * sizeof(int *));
 	for (int i = 0; i < color_count; i++) {
-		prefix_sums[i] = (int *) malloc((num_tuples + 1) * sizeof(int));
+		prefix_sums[i] = (int *) palloc((num_tuples + 1) * sizeof(int));
 	}
 
 	for (int i = 0; i < color_count; i++) {
@@ -1227,13 +1259,13 @@ RBTNode *int_rbtree_allocfunc(void *arg)
 
 RBTNode *weighted_pointers_rbtree_allocfunc(void *arg)
 {
-	WeightedPointersRBNode *newNode = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
+	WeightedPointersRBNode *newNode = (WeightedPointersRBNode *) palloc(sizeof(WeightedPointersRBNode));
 	newNode->weight1 = 0;
 	newNode->weight2 = 0;
-	newNode->fwdPosPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
-	newNode->fwdNegPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
-	newNode->prevPosPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
-	newNode->prevNegPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
+	newNode->fwdPosPtr = (int *) palloc((num_tuples + 2) * sizeof(int));
+	newNode->fwdNegPtr = (int *) palloc((num_tuples + 2) * sizeof(int));
+	newNode->prevPosPtr = (int *) palloc((num_tuples + 2) * sizeof(int));
+	newNode->prevNegPtr = (int *) palloc((num_tuples + 2) * sizeof(int));
 	if (!newNode->fwdPosPtr || !newNode->fwdNegPtr || !newNode->prevPosPtr || !newNode->prevNegPtr) {
 		perror("Failed to allocate values");
 		exit(EXIT_FAILURE);
@@ -1278,10 +1310,10 @@ void buildingpointers(char **column_headers, char *attribute, int natts, Subject
                           int_rbtree_freefunc,   /* Free function */
                           NULL); 
     cumulative = 0;
-    RJP = (int *)malloc((num_tuples + 2) * sizeof(int));
-	LJP = (int *)malloc((num_tuples + 2) * sizeof(int));
-    c = (int *)malloc((num_tuples + 2) * sizeof(int));
-	color = (int *)malloc((num_tuples + 2) * sizeof(int));
+    RJP = (int *)palloc((num_tuples + 2) * sizeof(int));
+	LJP = (int *)palloc((num_tuples + 2) * sizeof(int));
+    c = (int *)palloc((num_tuples + 2) * sizeof(int));
+	color = (int *)palloc((num_tuples + 2) * sizeof(int));
 	
     for (int i = 0; i < num_tuples + 2; i++) 
 	{
@@ -1527,8 +1559,8 @@ Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectT
 	}
     attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 
-	c = (int *)malloc((num_tuples+2) * sizeof(int));
-	color= (int *)malloc((num_tuples+2) * sizeof(int));
+	c = (int *)palloc((num_tuples+2) * sizeof(int));
+	color= (int *)palloc((num_tuples+2) * sizeof(int));
 	for (int i = 0; i < num_tuples+2; i++) 
 	{
 		c[i] = -1;
@@ -1715,7 +1747,7 @@ Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectT
 	}
 	elog(INFO,"Best similarity: %.2f",best_similarity);
 	
-    free(c);
+    pfree(c);
 
 	return fair_range;
 }
@@ -1757,8 +1789,8 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 	}
     attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);
 
-	c = (int *)malloc((num_tuples+2) * sizeof(int));
-	color= (int *)malloc((num_tuples+2) * sizeof(int));
+	c = (int *)palloc((num_tuples+2) * sizeof(int));
+	color= (int *)palloc((num_tuples+2) * sizeof(int));
 	for (int i = 0; i < num_tuples+2; i++) 
 	{
 		c[i] = -1;
@@ -1916,10 +1948,10 @@ Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, i
 Range multicolor_getrange(char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int **prefix_sums, int start, int end, int epsilon)
 {
 	int num_color = list_length(subjectToStmt->attr_list);
-	int *weights = malloc(num_color * sizeof(int));
-	char **C = malloc(num_color * sizeof(char *));
+	int *weights = palloc(num_color * sizeof(int));
+	char **C = palloc(num_color * sizeof(char *));
 	int idx = 0;
-    int *color_indices = malloc(num_color * sizeof(int));
+    int *color_indices = palloc(num_color * sizeof(int));
 	ListCell *lc;
 	double best_similarity = 0;
 	Range fair_range = createRange(-1,-1);
@@ -1953,9 +1985,9 @@ Range multicolor_getrange(char **column_headers, char* attribute, int natts, Sub
 
     attr_index = get_attribute_index(column_headers, natts, subjectToStmt->attr);    
 
-	// prefix_sums = malloc(num_color * sizeof(int *));
+	// prefix_sums = palloc(num_color * sizeof(int *));
 	// for (int i = 0; i < num_color; i++)	{
-	// 	prefix_sums[i] = malloc((num_tuples) * sizeof(int)); 
+	// 	prefix_sums[i] = palloc((num_tuples) * sizeof(int)); 
 	// }
 
 	// for (int i = 0; i < num_color; i++) {
@@ -2043,7 +2075,7 @@ const char* print_table_names_from_query(QueryDesc *queryDesc)
             const char *relname = get_rel_name(relid);
 
 			if (relname) {
-				char *result = (char *) malloc(strlen(relname) + 1);
+				char *result = (char *) palloc(strlen(relname) + 1);
 				memcpy(result, relname, strlen(relname) + 1);
 				return result;
 			}
@@ -2323,9 +2355,7 @@ void insert_val(RBTree *rbt, int key, int value){
 	IntRBNode *foundNode;
 	
 	node.key = key;
-	elog(INFO, "Inserting key: %d, value: %d", key, value);
 	foundNode = (IntRBNode *) rbt_find(rbt, (RBTNode *) &node);
-	elog(INFO, "Found node: %p", foundNode);
 	if(foundNode)
 	{
 		foundNode->values[foundNode->index] = value;
@@ -2334,9 +2364,7 @@ void insert_val(RBTree *rbt, int key, int value){
 	else
 	{
 		bool newinsert;
-		elog(INFO, "Inserting new node with key: %d", key);
 		IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
-		elog(INFO, "New node");
 		newNode->key = key;
 		newNode->values = (int *) palloc(num_tuples * sizeof(int));
 		newNode->values[0] = value;
@@ -2381,10 +2409,12 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	NULL); 
 	cumulative = 0;
 
-	fwdPosPtr = (int *)malloc((num_tuples+2) * sizeof(int));
-	fwdNegPtr = (int *)malloc((num_tuples+2) * sizeof(int));
-	c = (int *)malloc((num_tuples+2) * sizeof(int));
-	color = (int *)malloc((num_tuples+2) * sizeof(int));
+	oldContext = MemoryContextSwitchTo(CurrentMemoryContext);
+	fwdPosPtr = (int *)palloc((num_tuples+2) * sizeof(int));
+	fwdNegPtr = (int *)palloc((num_tuples+2) * sizeof(int));
+	MemoryContextSwitchTo(oldContext);
+	c = (int *)palloc((num_tuples+2) * sizeof(int));
+	color = (int *)palloc((num_tuples+2) * sizeof(int));
 	for (int i = 0; i < num_tuples+2; i++) 
 	{
 		fwdPosPtr[i] = -1;
@@ -2419,16 +2449,13 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	c[num_tuples+1]=0;
 	color[0]=0;
 	color[num_tuples+1]=0;
-
-	PtrVector *nodes_to_delete = (PtrVector *) malloc(sizeof(PtrVector));
-	ptr_vector_init(nodes_to_delete);
 	RBTreeIterator *iter;
-	IntRBNode *node;
-	node = (IntRBNode *) palloc(sizeof(IntRBNode));
 	iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
-	IntRBNode* search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
+	IntRBNode *search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
 	for (int i = 0; i < num_tuples+1; i++){
-		elog(INFO, "color[%d]: %d", i, color[i]);
+		// elog(INFO, "color[%d]:%d", i, color[i]);
+		IntRBNode *node;
+
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -2438,6 +2465,7 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 			}
 			c[i] = cumulative;
 		}	
+
 		rbt_begin_iterate(fwdPosBST, LeftRightWalk, iter);
 		node = (IntRBNode *) rbt_iterate(iter);
 		while (node && node->key < c[i]) {
@@ -2445,46 +2473,18 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				fwdPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
-		for(int i = 0; i < nodes_to_delete->size; i++)
-		{
-			elog(INFO, "REACHED HERE4");
-			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
-			rbt_delete(fwdPosBST, (RBTNode *) node_to_delete);
-			elog(INFO, "REACHED HERE5");
-
-		}
-		elog(INFO, "REACHED HERE1");
-		nodes_to_delete->size = 0;
-		elog(INFO, "REACHED HERE2");
 		search_node->key = c[i];
-		elog(INFO, "REACHED HERE2.2");
 		node = (IntRBNode*) rbt_find_great(fwdNegBST, (RBTNode*) search_node, 0);
-		elog(INFO, "REACHED HERE2.3");
 		rbt_begin_iterate_from(fwdNegBST, LeftRightWalk, iter, (RBTNode*) node);
-		elog(INFO, "REACHED HERE2.4");
 		while (node) {
 			for (int j = node->start; j < node->index; j++) {
 				fwdNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
-		elog(INFO, "REACHED HERE3");
-
-		for(int i = 0; i < nodes_to_delete->size; i++)
-		{
-			elog(INFO, "REACHED HERE6");
-			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
-			rbt_delete(fwdPosBST, (RBTNode *) node_to_delete);
-			elog(INFO, "REACHED HERE7");
-		}
-
-		nodes_to_delete->size = 0;
-		
 		insert_val(fwdPosBST, c[i], i);
 		insert_val(fwdNegBST, c[i], i);
 
@@ -2507,11 +2507,15 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	NULL); 
 
 	cumulative = 0;
-	c = (int *)malloc((num_tuples+2) * sizeof(int));
+	c = (int *)palloc((num_tuples+2) * sizeof(int));
 	c[0]=0;
 	c[num_tuples+1]=0;
-	prevPosPtr = (int *)malloc((num_tuples+2) * sizeof(int));
-	prevNegPtr = (int *)malloc((num_tuples+2) * sizeof(int));
+	
+	oldContext = MemoryContextSwitchTo(CurrentMemoryContext);
+	prevPosPtr = (int *)palloc((num_tuples+2) * sizeof(int));
+	prevNegPtr = (int *)palloc((num_tuples+2) * sizeof(int));
+	MemoryContextSwitchTo(oldContext);
+
 	for (int i = 0; i < num_tuples+2; i++) 
 	{
 		prevPosPtr[i] = -1;
@@ -2519,6 +2523,8 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	}
 
 	for(int i = num_tuples+1; i >=1; i--) {
+		// elog(INFO, "color[%d]:%d", i, color[i]);
+		IntRBNode *node;
 		if(i>=1 && i<=num_tuples)
 		{
 			if (my_strcmp(outputArray[i-1][attr_index], feature2) == 0) {
@@ -2535,18 +2541,8 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				prevPosPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
-
-		for(int i = 0; i < nodes_to_delete->size; i++)
-		{
-			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
-			rbt_delete(prevPosBST, (RBTNode *) node_to_delete);
-		}
-
-		nodes_to_delete->size = 0;
-		
 		search_node->key = c[i];
 		node = (IntRBNode*) rbt_find_great(prevNegBST, (RBTNode*) search_node, 0);
 		rbt_begin_iterate_from(prevNegBST, LeftRightWalk, iter, (RBTNode*) node);
@@ -2555,17 +2551,8 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 				prevNegPtr[node->values[j]] = i;
 			}
 			node->start = node->index;
-			ptr_vector_push(nodes_to_delete, (void *)node);
 			node = (IntRBNode*) rbt_iterate(iter);
 		}
-
-		for(int i = 0; i < nodes_to_delete->size; i++)
-		{
-			IntRBNode *node_to_delete = (IntRBNode *) ptr_vector_get(nodes_to_delete, i);
-			rbt_delete(prevPosBST, (RBTNode *) node_to_delete);
-		}
-		
-		nodes_to_delete->size = 0;
 		
 		insert_val(prevPosBST, c[i], i);
 		insert_val(prevNegBST, c[i], i);
@@ -2573,6 +2560,8 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 
 	pfree(prevPosBST);
 	pfree(prevNegBST);
+	pfree(search_node);
+	pfree(iter);
 
 	// for(int i = 0; i < num_tuples+2; i++) 
 	// {

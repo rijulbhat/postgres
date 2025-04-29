@@ -131,14 +131,13 @@ static int sort_attr_index = 0;
 static int color_index = 0;
 static myhash_hash *hash;
 
-void process_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
+void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
     int epsilon;
 	const char* table;
 	int table_index;
 	StringVector *column_header;
 
     if(reset_table){
-		elog(INFO, "Resetting tables");
 		reset_table = false;
 		tables = (StringVector *) malloc(sizeof(StringVector));
 		table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
@@ -175,11 +174,6 @@ void process_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 
 		if (table_index == -1){
 			elog(INFO, "Table not found, creating new table");
-			elog(INFO, "Number of tables already seen: %s", table);
-			for (int i = 0; i < tables->size; i++)
-			{
-				elog(INFO, "Table %d: %s", i, tables->data[i]);
-			}
 			
 			PtrVector *new_table_pointers = (PtrVector *) malloc(sizeof(PtrVector));
 			StringVector *new_table_attributes = (StringVector *) malloc(sizeof(StringVector));
@@ -2419,7 +2413,7 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
 	IntRBNode *search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
 	for (int i = 0; i < num_tuples+1; i++){
-		elog(INFO, "color[%d]:%d", i, color[i]);
+		// elog(INFO, "color[%d]:%d", i, color[i]);
 		IntRBNode *node;
 
 		if(i>=1 && i<=num_tuples)
@@ -2485,7 +2479,7 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	}
 
 	for(int i = num_tuples+1; i >=1; i--) {
-		elog(INFO, "color[%d]:%d", i, color[i]);
+		// elog(INFO, "color[%d]:%d", i, color[i]);
 		IntRBNode *node;
 		if(i>=1 && i<=num_tuples)
 		{

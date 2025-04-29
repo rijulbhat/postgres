@@ -468,8 +468,23 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 */
 	estate->es_total_processed += estate->es_processed;
 
+	/* Create a new memory context for temporary allocations */
+	MemoryContext tempContext = AllocSetContextCreate(CurrentMemoryContext,
+													  "TemporaryContext",
+													  ALLOCSET_DEFAULT_SIZES);
+
+	/* Switch to the new memory context */
+	MemoryContext oldContext = MemoryContextSwitchTo(tempContext);
+
+	/* Perform operations within the temporary memory context */
 	if (subjectToStmt != NULL)	process_subject_query(queryDesc, subjectToStmt);
 	
+	/* Switch back to the previous memory context */
+	MemoryContextSwitchTo(oldContext);
+
+	/* Delete the temporary memory context to free memory */
+	MemoryContextDelete(tempContext);
+
 	/*
 	 * shutdown tuple receiver, if we started it
 	 */
