@@ -13,11 +13,27 @@
 #define SH_DEFINE
 #include "lib/simplehash.h"
 
-typedef struct IntPair
-{
+typedef struct IntPair {
     int key1;        
     int key2;
 } IntPair;
+
+uint32 intpair_hash(const void *key, Size keysize) {
+    const IntPair *intpair = (const IntPair *) key;
+    uint32 hash1 = hash_bytes_uint32(intpair->key1);
+    uint32 hash2 = hash_bytes_uint32(intpair->key2);
+    return hash_combine(hash1, hash2); // Combine the two hash values
+}
+
+int intpair_compare(const void *key1, const void *key2, Size keysize) {
+    const IntPair *intpair1 = (const IntPair *) key1;
+    const IntPair *intpair2 = (const IntPair *) key2;
+
+    if (intpair1->key1 == intpair2->key1 && intpair1->key2 == intpair2->key2) {
+        return 0; // Keys are equal
+    }
+    return 1; // Keys are not equal
+}
 
 typedef struct Range {
 	int start;
@@ -95,7 +111,7 @@ const char* print_table_names_from_query(QueryDesc *queryDesc);
 Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range multicolor_getrange(char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int **prefix_sums, int start, int end, int epsilon);
-Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix_sum, SubjectToStmt* subjectToStmt);
+Range iterativebfs(Range originalrange, StringVector* color_vector, int **prefix_sum, SubjectToStmt* subjectToStmt);
 
 int **compute_prefix_sums(int num_tuples, char **distinct_colors, int color_count, int color_index);
 char **compute_distinct_colors(int num_tuples, int color_index, int *color_count);
@@ -606,7 +622,7 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 			else{
 				// elog(INFO, "Non-binary attribute");
 				Range originalrange;
-				Range recursivebfsoutput;
+				Range iterativebfsoutput;
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
@@ -620,8 +636,8 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				//%jalu writing this, do not hit
 				originalrange = createRange(l_index, r_index);
-				recursivebfsoutput = recursivebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
-				elog(INFO, "BFSRecursive Fair range: [%d, %d]", recursivebfsoutput.start, recursivebfsoutput.end);
+				iterativebfsoutput = iterativebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
+				elog(INFO, "BFSiterative Fair range: [%d, %d]", iterativebfsoutput.start, iterativebfsoutput.end);
 				//%jalu ending this, do not blame
 
                 if (output.start >= output.end){
@@ -632,9 +648,9 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
                 }
 
-                if (recursivebfsoutput.start < recursivebfsoutput.end){
+                if (iterativebfsoutput.start < iterativebfsoutput.end){
 					elog(INFO, "BFS CORRECTED QUERY:");
-					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[recursivebfsoutput.start - 1][index], outputArray[recursivebfsoutput.end - 1][index]);
+					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[iterativebfsoutput.start - 1][index], outputArray[iterativebfsoutput.end - 1][index]);
                 }
 			}
 		}
@@ -2162,7 +2178,7 @@ static bool validrange(Range r)
 	}
 }
 
-Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix_sums, SubjectToStmt* subjectToStmt)
+Range iterativebfs(Range originalrange, StringVector* color_vector, int **prefix_sums, SubjectToStmt* subjectToStmt)
 {
 	HASHCTL ctl;
 	HTAB *intPairHash;
@@ -2172,11 +2188,13 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 	memset(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(IntPair);   /* Size of the key (only key) */
 	ctl.entrysize = sizeof(IntPair); /* Size of entry == size of key */
+	ctl.hash = intpair_hash;
+	ctl.match = intpair_compare;
 
 	intPairHash = hash_create("IntPair Hash Table",
 		128,      /* initial size */
 		&ctl,
-		HASH_ELEM);
+		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
 
 	currheap = pairingheap_allocate(heapnode_comparator, NULL);
 	first_node = (heapnode *) palloc(sizeof(heapnode));
@@ -2206,7 +2224,7 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		if(topsimilarityfair)
 		{
             if (maxsimilarity_node->similarity > 0){
-			    elog(INFO, "BFSRecursive Best Similarity: %.2f", maxsimilarity_node->similarity);
+			    elog(INFO, "BFSiterative Best Similarity: %.2f", maxsimilarity_node->similarity);
 				hash_destroy(intPairHash);
 			    return maxsimilarity_node->r;
             }
@@ -2232,54 +2250,94 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		{
 			bool found = false;
 			IntPair key = {newrange1.start, newrange1.end};
-			heapnode *new_node1 = (heapnode *) palloc(sizeof(heapnode));
+			heapnode *new_node1;
+			IntPair* entry;
+			entry = (IntPair *) hash_search(intPairHash,
+								(void *)&key,
+								HASH_ENTER, /* insert if not found */
+								&found);
+			if(!found){
+				entry->key1 = key.key1;
+				entry->key2 = key.key2;
+			}
+			
+			new_node1 = (heapnode *) palloc(sizeof(heapnode));
 			new_node1->r = newrange1;
 			new_node1->similarity = jaccordsimilarity(originalrange, newrange1);
-			(IntPair *) hash_search(intPairHash,
-											(void *)&key,
-											HASH_ENTER, /* insert if not found */
-											&found);
-			
-			if(new_node1->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node1);
+
+			if(new_node1->similarity < maxsimilarity_node->similarity && !found){ 
+				pairingheap_add(currheap, (pairingheap_node *) new_node1);
+			}
 		}
 		if(validrange(newrange2))
 		{
 			bool found = false;
 			IntPair key = {newrange2.start, newrange2.end};
-			heapnode *new_node2 = (heapnode *) palloc(sizeof(heapnode));
-			new_node2->r = newrange2;
-			new_node2->similarity = jaccordsimilarity(originalrange, newrange2);
-			(IntPair *) hash_search(intPairHash,
+			heapnode *new_node2;
+			IntPair* entry;
+
+			entry = (IntPair *) hash_search(intPairHash,
 											(void *)&key,
 											HASH_ENTER, /* insert if not found */
 											&found);
-			if(new_node2->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node2);
+			if(!found){
+				entry->key1 = key.key1;
+				entry->key2 = key.key2;
+			}
+				
+			new_node2 = (heapnode *) palloc(sizeof(heapnode));
+			new_node2->r = newrange2;
+			new_node2->similarity = jaccordsimilarity(originalrange, newrange2);
+			
+			if(new_node2->similarity < maxsimilarity_node->similarity && !found) {
+				pairingheap_add(currheap, (pairingheap_node *) new_node2);
+			}
 		}
 		if(validrange(newrange3))
 		{
 			bool found = false;
 			IntPair key = {newrange3.start, newrange3.end};
-			heapnode *new_node3 = (heapnode *) palloc(sizeof(heapnode));
-			new_node3->r = newrange3;
-			new_node3->similarity = jaccordsimilarity(originalrange, newrange3);
-			(IntPair *) hash_search(intPairHash,
+			heapnode *new_node3;
+			IntPair* entry;
+			entry = (IntPair *) hash_search(intPairHash,
 											(void *)&key,
 											HASH_ENTER, /* insert if not found */
 											&found);
-			if(new_node3->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node3);
+			if(!found){
+				entry->key1 = key.key1;
+				entry->key2 = key.key2;
+			}
+
+			new_node3 = (heapnode *) palloc(sizeof(heapnode));
+			new_node3->r = newrange3;
+			new_node3->similarity = jaccordsimilarity(originalrange, newrange3);
+								
+			if(new_node3->similarity < maxsimilarity_node->similarity && !found) {
+				pairingheap_add(currheap, (pairingheap_node *) new_node3);
+			}
 		}
 		if(validrange(newrange4))
 		{
 			bool found = false;
 			IntPair key = {newrange4.start, newrange4.end};
-			heapnode *new_node4 = (heapnode *) palloc(sizeof(heapnode));
-			new_node4->r = newrange4;
-			new_node4->similarity = jaccordsimilarity(originalrange, newrange4);
-			(IntPair *) hash_search(intPairHash,
+			heapnode *new_node4;
+			IntPair* entry;
+			entry = (IntPair *) hash_search(intPairHash,
 											(void *)&key,
 											HASH_ENTER, /* insert if not found */
 											&found);
-			if(new_node4->similarity < maxsimilarity_node->similarity && !found) pairingheap_add(currheap, (pairingheap_node *) new_node4);
+			if(!found){
+				entry->key1 = key.key1;
+				entry->key2 = key.key2;
+			}
+
+			new_node4 = (heapnode *) palloc(sizeof(heapnode));
+			new_node4->r = newrange4;
+			new_node4->similarity = jaccordsimilarity(originalrange, newrange4);
+											
+			if(new_node4->similarity < maxsimilarity_node->similarity && !found) {
+				pairingheap_add(currheap, (pairingheap_node *) new_node4);
+			}
 		}
 	}
 	hash_destroy(intPairHash);
