@@ -95,7 +95,7 @@ const char* print_table_names_from_query(QueryDesc *queryDesc);
 Range getrange_LJP_RJP(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range getrange(char **column_headers, int natts, SubjectToStmt* subjectToStmt, int start, int end, int epsilon);
 Range multicolor_getrange(char **column_headers, char* attribute, int natts, SubjectToStmt* subjectToStmt, int **prefix_sums, int start, int end, int epsilon);
-Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix_sum, SubjectToStmt* subjectToStmt);
+Range iterativebfs(Range originalrange, StringVector* color_vector, int **prefix_sum, SubjectToStmt* subjectToStmt);
 
 int **compute_prefix_sums(int num_tuples, char **distinct_colors, int color_count, int color_index);
 char **compute_distinct_colors(int num_tuples, int color_index, int *color_count);
@@ -606,7 +606,7 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 			else{
 				// elog(INFO, "Non-binary attribute");
 				Range originalrange;
-				Range recursivebfsoutput;
+				Range iterativebfsoutput;
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
@@ -620,8 +620,8 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
 				//%jalu writing this, do not hit
 				originalrange = createRange(l_index, r_index);
-				recursivebfsoutput = recursivebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
-				elog(INFO, "BFSRecursive Fair range: [%d, %d]", recursivebfsoutput.start, recursivebfsoutput.end);
+				iterativebfsoutput = iterativebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
+				elog(INFO, "BFSiterative Fair range: [%d, %d]", iterativebfsoutput.start, iterativebfsoutput.end);
 				//%jalu ending this, do not blame
 
                 if (output.start >= output.end){
@@ -632,9 +632,9 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[output.start - 1][index], outputArray[output.end - 1][index]);
                 }
 
-                if (recursivebfsoutput.start < recursivebfsoutput.end){
+                if (iterativebfsoutput.start < iterativebfsoutput.end){
 					elog(INFO, "BFS CORRECTED QUERY:");
-					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[recursivebfsoutput.start - 1][index], outputArray[recursivebfsoutput.end - 1][index]);
+					elog(INFO, "SELECT * FROM %s WHERE %s BETWEEN %s AND %s", table, attribute, outputArray[iterativebfsoutput.start - 1][index], outputArray[iterativebfsoutput.end - 1][index]);
                 }
 			}
 		}
@@ -2162,7 +2162,7 @@ static bool validrange(Range r)
 	}
 }
 
-Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix_sums, SubjectToStmt* subjectToStmt)
+Range iterativebfs(Range originalrange, StringVector* color_vector, int **prefix_sums, SubjectToStmt* subjectToStmt)
 {
 	HASHCTL ctl;
 	HTAB *intPairHash;
@@ -2206,7 +2206,7 @@ Range recursivebfs(Range originalrange, StringVector* color_vector, int **prefix
 		if(topsimilarityfair)
 		{
             if (maxsimilarity_node->similarity > 0){
-			    elog(INFO, "BFSRecursive Best Similarity: %.2f", maxsimilarity_node->similarity);
+			    elog(INFO, "BFSiterative Best Similarity: %.2f", maxsimilarity_node->similarity);
 				hash_destroy(intPairHash);
 			    return maxsimilarity_node->r;
             }
