@@ -1224,15 +1224,16 @@ RBTNode *int_rbtree_allocfunc(void *arg)
 {
     IntRBNode *newNode = (IntRBNode *) palloc(sizeof(IntRBNode));
     newNode->key = 0;
-	// elog(INFO,"%d",num_tuples * sizeof(int));
-	newNode->values = (int *) palloc(num_tuples * sizeof(int));
-	if (!newNode->values) {
-		perror("Failed to allocate values");
-		exit(EXIT_FAILURE);
-	}
+	newNode->values = NULL;
 	newNode->index = 0;
 	newNode->start = 0;
-    return (RBTNode *) newNode;
+	// elog(INFO,"%d",num_tuples * sizeof(int));
+	// newNode->values = (int *) palloc(num_tuples * sizeof(int));
+	// if (!newNode->values) {
+	// 	perror("Failed to allocate values");
+	// 	exit(EXIT_FAILURE);
+	// }
+	return (RBTNode *) newNode;
 }
 
 RBTNode *weighted_pointers_rbtree_allocfunc(void *arg)
@@ -1253,7 +1254,8 @@ RBTNode *weighted_pointers_rbtree_allocfunc(void *arg)
 
 void int_rbtree_freefunc(RBTNode *node, void *arg)
 {
-    pfree(node);
+	pfree(((IntRBNode *) node)->values);
+    pfree((IntRBNode *) node);
 }
 
 void weighted_pointers_rbtree_freefunc(RBTNode *node, void *arg)
@@ -2390,6 +2392,9 @@ void insert_val(RBTree *rbt, int key, int value){
 		newNode->index = 1;
 		newNode->start = 0;
 		rbt_insert(rbt, (RBTNode *) newNode, &newinsert);
+
+		// pfree(newNode->values);
+		pfree(newNode);
 	}
 }
 
@@ -2402,6 +2407,7 @@ IntRBNode *get_node(RBTree *rbt, int key){
 }
 
 void buildingpointers_w(char **column_headers, char *attribute, int natts, SubjectToStmt* subjectToStmt){
+
 	int cumulative, sort_attr_index, attr_index;
 	int w1, w2;
 	int *c, *color;
@@ -2474,7 +2480,10 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 	ptr_vector_init(nodes_to_delete);
 	iter = (RBTreeIterator *) palloc(sizeof(RBTreeIterator));
 	search_node = (IntRBNode *) palloc(sizeof(IntRBNode));
-
+	
+	// elog(LOG, "[Log1] Dumping memory context stats:");
+	// MemoryContextStats(CurrentMemoryContext);
+	
 	for (int i = 0; i < num_tuples+1; i++){
 		// elog(INFO, "color[%d]:%d", i, color[i]);
 		IntRBNode *node;
@@ -2533,8 +2542,14 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 		insert_val(fwdNegBST, c[i], i);
 	}
 
+	// elog(LOG, "[Log2] Dumping memory context stats:");
+	// MemoryContextStats(CurrentMemoryContext);
+
 	pfree(fwdPosBST);
 	pfree(fwdNegBST);
+
+	// elog(LOG, "[Log3] Dumping memory context stats:");
+	// MemoryContextStats(CurrentMemoryContext);
 
 	prevPosBST = rbt_create(sizeof(IntRBNode),   /* Node size */
 						int_rbtree_comparator, /* Comparator */
@@ -2618,10 +2633,16 @@ void buildingpointers_w(char **column_headers, char *attribute, int natts, Subje
 		insert_val(prevNegBST, c[i], i);
 	}
 
+	// elog(LOG, "[Log4] Dumping memory context stats:");
+	// MemoryContextStats(CurrentMemoryContext);
+
 	pfree(prevPosBST);
 	pfree(prevNegBST);
 	pfree(search_node);
 	pfree(iter);
+
+	// elog(LOG, "[Log5] Dumping memory context stats:");
+	// MemoryContextStats(CurrentMemoryContext);
 
 	// for(int i = 0; i < num_tuples+2; i++) 
 	// {
