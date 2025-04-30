@@ -1241,14 +1241,10 @@ RBTNode *weighted_pointers_rbtree_allocfunc(void *arg)
 	WeightedPointersRBNode *newNode = (WeightedPointersRBNode *) malloc(sizeof(WeightedPointersRBNode));
 	newNode->weight1 = 0;
 	newNode->weight2 = 0;
-	newNode->fwdPosPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
-	newNode->fwdNegPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
-	newNode->prevPosPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
-	newNode->prevNegPtr = (int *) malloc((num_tuples + 2) * sizeof(int));
-	if (!newNode->fwdPosPtr || !newNode->fwdNegPtr || !newNode->prevPosPtr || !newNode->prevNegPtr) {
-		perror("Failed to allocate values");
-		exit(EXIT_FAILURE);
-	}
+	newNode->fwdPosPtr = NULL;
+	newNode->fwdNegPtr = NULL;
+	newNode->prevPosPtr = NULL;
+	newNode->prevNegPtr = NULL;
 	return (RBTNode *) newNode;
 }
 
