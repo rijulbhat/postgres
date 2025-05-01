@@ -1,4 +1,7 @@
 #include "executor/fairness.h"
+// #include "portability/instr_time.h"
+
+// instr_time start, end, duration;
 
 #include "common/hashfn.h"
 /* Generate hash table functions/types */
@@ -607,7 +610,14 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 						prevNegPtr = weighted_pointers_node->prevNegPtr;
 					}
 				}
+				// INSTR_TIME_SET_CURRENT(start);
 				output = getrange(column_header->data, column_header->natts, subjectToStmt, l_index, r_index, epsilon);
+				// INSTR_TIME_SET_CURRENT(end);
+				// duration = end;
+				// INSTR_TIME_SUBTRACT(duration, start);
+				// fprintf(stderr, "Time taken for getrange: %f ms with table = %s\n", INSTR_TIME_GET_MILLISEC(duration), table);
+				// elog(INFO, "Time taken for getrange: %f ms", INSTR_TIME_GET_MILLISEC(duration));
+
 				elog(INFO, "Fair range: [%d, %d]", output.start, output.end);
 				
 				if(output.start >= output.end){
@@ -626,19 +636,13 @@ void process_subject_query(QueryDesc* queryDesc, SubjectToStmt* subjectToStmt){
 
 				elog(INFO, "l_index: %d, r_index: %d", l_index, r_index);
 				epsilon = ((A_Const*)subjectToStmt->threshold_val)->val.ival.ival;
-				// for(int i = 0;i<10;i++)
-				// {
 				
-
-				// }
 				output = multicolor_getrange(column_header->data, attribute, column_header->natts, subjectToStmt, prefix_sums, l_index, r_index, epsilon);
 
 				elog(INFO, "Naive Fair range: [%d, %d]", output.start, output.end);
-				//%jalu writing this, do not hit
 				originalrange = createRange(l_index, r_index);
 				iterativebfsoutput = iterativebfs(originalrange, color_vector, prefix_sums, subjectToStmt);
 				elog(INFO, "BFSiterative Fair range: [%d, %d]", iterativebfsoutput.start, iterativebfsoutput.end);
-				//%jalu ending this, do not blame
 
                 if (output.start >= output.end){
                     elog(INFO, "NO CORRECTED QUERY");

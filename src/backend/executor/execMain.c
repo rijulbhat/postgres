@@ -64,26 +64,8 @@
 #include "utils/plancache.h"
 #include "utils/rls.h"
 #include "utils/snapmgr.h"
-#include "utils/elog.h"
-#include "utils/builtins.h"
-#include "utils/elog.h"
-#include "lib/my_vector.h"
-#include "access/printtup.h"
-#include "lib/rbtree.h"  // For RBTree structure and related functions
-#include "lib/pairingheap.h"
-#include "catalog/namespace.h"  // for get_rel_name()
-#include "access/heapam.h"
-#include "access/htup_details.h"
-#include "utils/rel.h"
-#include "utils/lsyscache.h"
-#include "utils/snapmgr.h"
-#include "utils/typcache.h"
-#include "utils/builtins.h"
-#include "utils/memutils.h"
-#include "catalog/pg_type.h"
-#include "executor/executor.h"
-#include "parser/parsetree.h"
 #include "executor/fairness.h"
+
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
 ExecutorStart_hook_type ExecutorStart_hook = NULL;
 ExecutorRun_hook_type ExecutorRun_hook = NULL;
@@ -114,7 +96,7 @@ static void EvalPlanQualStart(EPQState *epqstate, Plan *planTree);
 /* end of local decls */
 
 
-/* ----------------------------------------attributes------------------------
+/* ----------------------------------------------------------------
  *		ExecutorStart
  *
  *		This routine must be called at the beginning of any execution of any
@@ -412,13 +394,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	/*
 	 * Switch into per-query memory context
 	 */
-	// elog(INFO, "HI");
-	 oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
-
-	subjectToStmt = (SubjectToStmt*) queryDesc->plannedstmt->subjectClause;
-	// if (subjectToStmt != NULL){
-	// 	elog(INFO, "Atribute: %s", subjectToStmt->attr);
-	// }
+	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
 	/* Allow instrumentation of Executor overall runtime */
 	if (queryDesc->totaltime)
@@ -438,10 +414,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	sendTuples = (operation == CMD_SELECT ||
 				  queryDesc->plannedstmt->hasReturning);
 
-	if (sendTuples){
+	if (sendTuples)
 		dest->rStartup(dest, operation, queryDesc->tupDesc);
-	}
-	// elog(INFO,"HIIII");
+
 	/*
 	 * Run plan, unless direction is NoMovement.
 	 *
@@ -467,9 +442,9 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	 * processed across multiple ExecutorRun() calls.
 	 */
 	estate->es_total_processed += estate->es_processed;
-
-	if (subjectToStmt != NULL)	process_subject_query(queryDesc, subjectToStmt);
 	
+	subjectToStmt = (SubjectToStmt*) queryDesc->plannedstmt->subjectClause;
+	if (subjectToStmt != NULL)      process_subject_query(queryDesc, subjectToStmt);
 	/*
 	 * shutdown tuple receiver, if we started it
 	 */
@@ -478,7 +453,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 
 	if (queryDesc->totaltime)
 		InstrStopNode(queryDesc->totaltime, estate->es_processed);
-	
+
 	MemoryContextSwitchTo(oldcontext);
 }
 
@@ -1765,7 +1740,7 @@ ExecutePlan(QueryDesc *queryDesc,
 	bool		use_parallel_mode;
 	TupleTableSlot *slot;
 	uint64		current_tuple_count;
-	bool 		is_complete;
+
 	/*
 	 * initialize local variables
 	 */
@@ -1835,12 +1810,10 @@ ExecutePlan(QueryDesc *queryDesc,
 			 * has closed and no more tuples can be sent. If that's the case,
 			 * end the loop.
 			 */
-			is_complete = dest->receiveSlot(slot, dest);
-			if (!is_complete)
+			if (!dest->receiveSlot(slot, dest))
 				break;
-
 		}
-				
+
 		/*
 		 * Count tuples processed, if this is a SELECT.  (For other operation
 		 * types, the ModifyTable plan node must count the appropriate

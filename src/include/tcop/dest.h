@@ -69,7 +69,6 @@
 
 #include "executor/tuptable.h"
 #include "tcop/cmdtag.h"
-#include "lib/my_vector.h"
 
 
 
@@ -128,7 +127,6 @@ struct _DestReceiver
 	/* CommandDest code for this receiver */
 	CommandDest mydest;
 	/* Private fields might appear beyond this point... */
-	// CharPtrVector *output_vector;
 };
 
 extern PGDLLIMPORT DestReceiver *None_Receiver; /* permanent receiver for
